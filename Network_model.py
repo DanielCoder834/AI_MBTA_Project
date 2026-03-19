@@ -85,41 +85,63 @@ class MBTANetwork:
         print(f"Loaded {len(self.routes)} routes")
 
     def load_stations(self):
+        """
+        Load rail stops and collapse duplicates by station name.
+        This is a practical fallback when MBTA stop metadata is messy.
+        """
         url = f"{MBTA_BASE}/stops?filter[route_type]=0,1"
         data = self.get_json(url)
+
+        name_to_canonical = {}
 
         for stop in data["data"]:
             stop_id = stop["id"]
             attrs = stop["attributes"]
 
+            name = attrs.get("name")
+            lat = attrs.get("latitude")
+            lon = attrs.get("longitude")
             parent_station = attrs.get("parent_station")
-            location_type = attrs.get("location_type")
 
-            # If a stop has a parent station, collapse to that, otherwise keep itself
-            station_id = parent_station if parent_station else stop_id
-            self.stop_to_station[stop_id] = station_id
+            if not name or lat is None or lon is None:
+                continue
 
-            # Only add canonical station once
-            if station_id not in self.station_info:
-                self.station_info[station_id] = {
-                    "name": attrs["name"],
-                    "lat": attrs["latitude"],
-                    "lon": attrs["longitude"],
-                    "location_type": location_type,
+            # Prefer actual parent station if present
+            candidate_id = parent_station if parent_station else stop_id
+
+            # If we've already seen this station name, reuse that canonical node
+            if name in name_to_canonical:
+                canonical_id = name_to_canonical[name]
+            else:
+                canonical_id = candidate_id
+                name_to_canonical[name] = canonical_id
+
+                self.station_info[canonical_id] = {
+                    "name": name,
+                    "lat": lat,
+                    "lon": lon,
                 }
 
                 self.graph.add_node(
-                    station_id,
-                    name=attrs["name"],
-                    lat=attrs["latitude"],
-                    lon=attrs["longitude"],
-                    location_type=location_type,
+                    canonical_id,
+                    name=name,
+                    lat=lat,
+                    lon=lon,
                 )
 
-        print(f"Loaded {self.graph.number_of_nodes()} stations")
+            # Every raw stop maps to the canonical station node
+            self.stop_to_station[stop_id] = canonical_id
+
+        print(f"Loaded {self.graph.number_of_nodes()} deduplicated stations")
 
     def canonical_station_id_from_stop_obj(self, stop_obj):
         stop_id = stop_obj["id"]
+
+        # First use the mapping built from /stops
+        if stop_id in self.stop_to_station:
+            return self.stop_to_station[stop_id]
+
+        # Fallback if not found
         attrs = stop_obj["attributes"]
         parent_station = attrs.get("parent_station")
         return parent_station if parent_station else stop_id
@@ -187,10 +209,10 @@ class MBTANetwork:
                 for stop in stop_objs:
                     sid = self.canonical_station_id_from_stop_obj(stop)
 
+                    # only keep real parent stations in graph
                     if sid not in self.graph.nodes:
                         continue
 
-                    # remove consecutive duplicates
                     if not station_sequence or station_sequence[-1] != sid:
                         station_sequence.append(sid)
 
@@ -273,7 +295,6 @@ class MBTANetwork:
 
         dupes = {name: ids for name, ids in name_to_ids.items() if len(ids) > 1}
 
-        print(f"\nDuplicate station names: {len(dupes)}")
         count = 0
         for name, ids in dupes.items():
             print(name, ids)
@@ -287,8 +308,9 @@ if __name__ == "__main__":
     G = network.build()
     network.summary()
 
-    sample_station = next(iter(G.nodes))
-    network.print_sample_neighbors(sample_station)
-
-    # Debug duplicate names
-    network.print_duplicate_station_names()
+    if G.number_of_nodes() > 0:
+        sample_station = next(iter(G.nodes))
+        network.print_sample_neighbors(sample_station)
+        network.print_duplicate_station_names()
+    else:
+        print("No stations were loaded.")
