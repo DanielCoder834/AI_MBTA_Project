@@ -224,7 +224,7 @@ class MBTAEnv(gym.Env):
         """
         Compute the average shortest-path travel time over all pairs of stations
         
-          1. Run Dijkstra's algorithm from every station simultaneously # TODO change to A*
+          1. Run Dijkstra's algorithm from every station simultaneously
           2. For each unique pair (u, v) find shortest path length.
           3. If they're unreachable penalise with DISCONNECT_PENALTY.
           4. Average everything together.
@@ -232,6 +232,7 @@ class MBTAEnv(gym.Env):
         # TODO: Currently this is just finding the shortest path between every pair of stations, change to use commuter + in teh future change to use data about actual commuter flows between stations (linked in medium article about MBTA)
         total, count = 0.0, 0
 
+        # TODO: right now just using Dijkstra's algorithm but could make it A*, look at if nx has a built in function for A*
         lengths = dict(
             nx.all_pairs_dijkstra_path_length(self._G, weight="travel_time_min")
         )
