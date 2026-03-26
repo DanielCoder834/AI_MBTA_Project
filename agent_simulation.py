@@ -6,7 +6,7 @@ import networkx as nx
 # represents a commuter(commuter) commuting from home to work(start to destination)
 class Commuter:
     # initializes the commuter
-    def initialization(self, home_station: str, work_station: str, commuter_id: int):
+    def __init__(self, home_station: str, work_station: str, commuter_id: int):
         self.home_station = home_station
         self.work_station = work_station
         self.commuter_id = commuter_id
