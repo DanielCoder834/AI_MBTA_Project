@@ -48,7 +48,7 @@ MANUAL_COORDS = {
 }
 
 # create the graph and add nodes with (name, lat, lon)
-G = nx.MultiGraph()
+G = nx.Graph()
 for id in station_ids:
     # get station info from the stops file or use manual coordinates
     info = station_info.get(id, {})
