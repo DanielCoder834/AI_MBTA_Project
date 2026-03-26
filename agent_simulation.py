@@ -6,7 +6,7 @@ import networkx as nx
 # represents a person(agent) commuting from home to work(start to destination)
 class Agent:
     # initializes the agent
-    def initialization(self, home_station: str, work_station: str, agent_id: int):
+    def __init__(self, home_station: str, work_station: str, agent_id: int):
         self.home_station = home_station
         self.work_station = work_station
         self.agent_id = agent_id
@@ -67,7 +67,7 @@ class AgentPopulation:
             agent.reset_location()
 
     # gives how many agenets are at different stops
-    def get_agent_count_at_locations(self) -> Dict[str, int]:
+    def get_agent_count_at_locations(self):
         location_counts = {station: 0 for station in self.station_list}
         for agent in self.agents:
             location_counts[agent.current_station] += 1
