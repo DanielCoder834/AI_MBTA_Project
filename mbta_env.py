@@ -229,7 +229,7 @@ class MBTAEnv(gym.Env):
           3. If they're unreachable penalise with DISCONNECT_PENALTY.
           4. Average everything together.
         """
-        # TODO: Currently this is just finding the shortest path between every pair of stations, change to use commuter 
+        # TODO: Currently this is just finding the shortest path between every pair of stations, change to use commuter + in teh future change to use data about actual commuter flows between stations (linked in medium article about MBTA)
         total, count = 0.0, 0
 
         lengths = dict(
