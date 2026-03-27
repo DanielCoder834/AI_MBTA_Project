@@ -35,6 +35,7 @@ import copy
 import pickle    
 from typing import Any 
 import networkx as nx  
+from AI_MBTA_Project.commuter_model import CommuterPopulation
 import numpy as np     
 import gymnasium as gym
 from gymnasium import spaces
@@ -77,6 +78,7 @@ class MBTAEnv(gym.Env):
         base_graph: nx.Graph,
         max_steps: int = MAX_STEPS,
         disconnect_penalty: float = DISCONNECT_PENALTY,
+        number_of_commuters: int = 20
     ):
         super().__init__()
 
@@ -121,6 +123,8 @@ class MBTAEnv(gym.Env):
 
         self._step_count: int = 0
         self._baseline_mean: float = None  # set in reset()
+
+        self.commuters = CommuterPopulation(self.graph, number_of_commuters)
 
     def reset(
         self,
@@ -168,6 +172,7 @@ class MBTAEnv(gym.Env):
 
         # mutate the graph for chosen action.
         self._apply_action(action_type, u, v, aux)
+        self.commuters.step_agents_toward_work()
         self._step_count += 1
 
         # recompute the mean travel time.
@@ -229,6 +234,7 @@ class MBTAEnv(gym.Env):
           3. If they're unreachable penalise with DISCONNECT_PENALTY.
           4. Average everything together.
         """
+
         # TODO: Currently this is just finding the shortest path between every pair of stations, change to use commuter + in teh future change to use data about actual commuter flows between stations (linked in medium article about MBTA)
         total, count = 0.0, 0
 
