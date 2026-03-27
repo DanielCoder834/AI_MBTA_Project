@@ -79,9 +79,8 @@ class MBTAEnv(gym.Env):
         base_graph: nx.Graph,
         max_steps: int = MAX_STEPS,
         disconnect_penalty: float = DISCONNECT_PENALTY,
-        number_of_commuters: int = 20
+        number_of_commuters: int = 20,
         render: bool = False,
-        number_of_commuters: int = 20
     ):
         super().__init__()
 
