@@ -33,20 +33,20 @@ How to use:
 
 import copy  
 import pickle    
+import time
 from typing import Any 
 import networkx as nx  
 import numpy as np     
 import gymnasium as gym
 from gymnasium import spaces
 from gymnasium.utils.env_checker import check_env
+import matplotlib.pyplot as plt
 
 
 # CONSTANTS
 
 # If two stations can't reach each other at all, we add this penalty to the total travel time so the agent learns to avoid disconnecting the network.
 DISCONNECT_PENALTY = 120.0
-
-
 
 # When the agent adds a brand new edge it gets assigned a random travel time. 
 # TODO: we could make better by basing it on the distance between the two stations.
@@ -69,14 +69,15 @@ class MBTAEnv(gym.Env):
         Travel-time penalty charged per unreachable start-destination station pair.
     """
 
-    # what rendering modes we support, currently none.
-    metadata = {"render_modes": []}
+    # rendering modes we support
+    metadata = {"render_modes": ["human"], "render_fps": 30,}
 
     def __init__(
         self,
         base_graph: nx.Graph,
         max_steps: int = MAX_STEPS,
         disconnect_penalty: float = DISCONNECT_PENALTY,
+        render: bool = False,
     ):
         super().__init__()
 
@@ -121,6 +122,9 @@ class MBTAEnv(gym.Env):
 
         self._step_count: int = 0
         self._baseline_mean: float = None  # set in reset()
+
+        self.render_mode = "human"
+        self._render_enabled = render
 
     def reset(
         self,
@@ -185,8 +189,29 @@ class MBTAEnv(gym.Env):
         return obs, reward, terminated, truncated, info
 
     def render(self):
-        # TODO: implement visualization.
-        pass
+        if not self._render_enabled:
+            return
+        if not hasattr(self, "_fig"):
+            plt.ion()
+            self._fig, self._ax = plt.subplots(figsize=(12, 8))
+
+        self._ax.clear()
+
+        pos = {
+            n: (d["lon"], d["lat"])
+            for n, d in self._G.nodes(data=True)
+            if d.get("lon") and d.get("lat")
+        }
+
+        nx.draw_networkx_edges(self._G, pos, ax=self._ax)
+        nx.draw_networkx_nodes(self._G, pos, node_size=20, ax=self._ax)
+
+        self._ax.set_title(f"Mean TT: {self._mean_travel_time():.2f}")
+        self._ax.axis("off")
+
+        self._fig.canvas.draw()
+        self._fig.canvas.flush_events()
+        plt.pause(0.001)
 
     def _apply_action(self, action_type: int, u: str, v: str, aux: str):
         """
@@ -309,7 +334,7 @@ if __name__ == "__main__":
     with open("mbta_data/mbta_graph.pkl", "rb") as f:
         G = pickle.load(f)
 
-    env = MBTAEnv(G, max_steps=50)
+    env = MBTAEnv(G, max_steps=50, render=True)
 
     print("Running gymnasium env_checker …")
     check_env(env, warn=True)
@@ -326,6 +351,10 @@ if __name__ == "__main__":
         action = env.action_space.sample()
         obs, reward, terminated, truncated, info = env.step(action)
         total_reward += reward
+
+        if step % 5 == 0 and env._render_enabled:   # render every 5 steps
+            env.render()
+            time.sleep(0.1)
 
         # print progress update every 10 steps
         if (step + 1) % 10 == 0:
