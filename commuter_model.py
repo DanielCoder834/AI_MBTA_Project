@@ -32,7 +32,7 @@ class CommuterPopulation:
     # Initializes the population
     # mbta_graph: transit network
     # num_commuters: # of commuters
-    def __init__(self, mbta_graph: nx.DiGraph, num_commuters: int = 100):
+    def __init__(self, mbta_graph: nx.Graph, num_commuters: int = 100):
         self.graph = mbta_graph
         self.num_commuters = num_commuters
         self.commuters: List[Commuter] = []
