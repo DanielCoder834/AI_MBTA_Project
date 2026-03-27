@@ -135,7 +135,8 @@ class MBTAEnv(gym.Env):
         self.render_mode = "human"
         self._render_enabled = render
 
-        self.commuters = CommuterPopulation(self.graph, number_of_commuters)
+        # create the commuter population with the given graph and number of commuters
+        self.commuters = CommuterPopulation(base_graph, number_of_commuters)
 
     def reset(
         self,
