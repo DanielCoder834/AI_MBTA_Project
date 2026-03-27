@@ -137,6 +137,7 @@ class MBTAEnv(gym.Env):
 
         # create the commuter population with the given graph and number of commuters
         self.commuters = CommuterPopulation(base_graph, number_of_commuters)
+        self.num_commuters = number_of_commuters
 
     def reset(
         self,
