@@ -13,7 +13,6 @@ DISCONNECT_PENALTY = 120.0
 class Commuter:
     # initializes the commuter
     def __init__(self, home_station: str, work_station: str, commuter_id: int):
-    def __init__(self, home_station: str, work_station: str, commuter_id: int):
         self.home_station = home_station
         self.work_station = work_station
         self.commuter_id = commuter_id
