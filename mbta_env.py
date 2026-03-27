@@ -35,7 +35,9 @@ import copy
 import pickle    
 import time
 from typing import Any 
+from matplotlib.pylab import norm
 import networkx as nx  
+from commuter_model import CommuterPopulation
 import numpy as np     
 import gymnasium as gym
 from gymnasium import spaces
@@ -77,6 +79,7 @@ class MBTAEnv(gym.Env):
         base_graph: nx.Graph,
         max_steps: int = MAX_STEPS,
         disconnect_penalty: float = DISCONNECT_PENALTY,
+        number_of_commuters: int = 20,
         render: bool = False,
     ):
         super().__init__()
@@ -93,6 +96,7 @@ class MBTAEnv(gym.Env):
 
         # working copy of the graph the agent will modify.
         self._G: nx.Graph = None
+        self._prev_mean_tt = None
 
         # action space 
         # - each action is tuple of 4 ints:
@@ -123,6 +127,10 @@ class MBTAEnv(gym.Env):
         self._step_count: int = 0
         self._baseline_mean: float = None  # set in reset()
 
+        # create the commuter population with the given graph and number of commuters
+        self.commuters = CommuterPopulation(base_graph, number_of_commuters)
+        self.num_commuters = number_of_commuters
+
         self.render_mode = "human"
         self._render_enabled = render
 
@@ -141,10 +149,13 @@ class MBTAEnv(gym.Env):
         super().reset(seed=seed)
 
         self._G = copy.deepcopy(self._base_graph)
+        self.commuters = CommuterPopulation(self._G, self.num_commuters)
         self._step_count = 0
         self._baseline_mean = self._mean_travel_time()
+        self._prev_mean_tt = self._baseline_mean
+       
 
-        obs  = self._observation()
+        obs  = self._observation(self._baseline_mean)
         info = self._info()
         return obs, info
 
@@ -172,19 +183,21 @@ class MBTAEnv(gym.Env):
 
         # mutate the graph for chosen action.
         self._apply_action(action_type, u, v, aux)
+        self.commuters.update_graph(self._G)  
         self._step_count += 1
 
         # recompute the mean travel time.
         mean_tt = self._mean_travel_time()
 
-        # reward = negative mean travel time.
-        reward = -mean_tt
+        # reward = change in travel time compared to the previous step.
+        reward = self._prev_mean_tt - mean_tt
+        self._prev_mean_tt = mean_tt
 
         # no "winning" state, agent just runs until max_steps.
         terminated = False
         truncated  = self._step_count >= self.max_steps
 
-        obs  = self._observation()
+        obs  = self._observation(mean_tt)
         info = self._info(mean_tt=mean_tt)
         return obs, reward, terminated, truncated, info
 
@@ -246,34 +259,9 @@ class MBTAEnv(gym.Env):
                 self._G.add_edge(u, aux, **data)
 
     def _mean_travel_time(self) -> float:
-        """
-        Compute the average shortest-path travel time over all pairs of stations
-        
-          1. Run Dijkstra's algorithm from every station simultaneously
-          2. For each unique pair (u, v) find shortest path length.
-          3. If they're unreachable penalise with DISCONNECT_PENALTY.
-          4. Average everything together.
-        """
-        # TODO: Currently this is just finding the shortest path between every pair of stations, change to use commuter + in teh future change to use data about actual commuter flows between stations (linked in medium article about MBTA)
-        total, count = 0.0, 0
+        return self.commuters.get_mean_commute_time()
 
-        # TODO: right now just using Dijkstra's algorithm but could make it A*, look at if nx has a built in function for A*
-        lengths = dict(
-            nx.all_pairs_dijkstra_path_length(self._G, weight="travel_time_min")
-        )
-
-        for i, u in enumerate(self.nodes):
-            for j, v in enumerate(self.nodes):
-                if i >= j:
-                    continue
-                count += 1
-                dist = lengths.get(u, {}).get(v, None)
-                total += dist if dist is not None else self.disconnect_penalty
-
-        return total / count if count > 0 else 0.0
-
-
-    def _observation(self) -> np.ndarray:
+    def _observation(self, mean_tt: float) -> np.ndarray:
         """
         The observation has two parts:
 
@@ -297,9 +285,7 @@ class MBTAEnv(gym.Env):
             mat[i, j] = w
             mat[j, i] = w
 
-        mean_tt = self._mean_travel_time()
-        norm    = np.float32(mean_tt / self.disconnect_penalty)
-
+        norm = np.float32(mean_tt / self.disconnect_penalty)
         return np.append(mat.flatten(), norm)
 
     def _info(self, mean_tt: float | None = None) -> dict:

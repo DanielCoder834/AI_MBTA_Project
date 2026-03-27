@@ -1,25 +1,19 @@
-import random
-from typing import Dict, List, Tuple
+from typing import List, Tuple
 import networkx as nx
+import math
+import numpy as np
+
+DEFAULT_EDGE_WEIGHT = 3
+DISCONNECT_PENALTY = 120.0
 
 # Commuter for RL MBTA environment
 # represents a commuter(commuter) commuting from home to work(start to destination)
 class Commuter:
     # initializes the commuter
-    def initialization(self, home_station: str, work_station: str, commuter_id: int):
+    def __init__(self, home_station: str, work_station: str, commuter_id: int):
         self.home_station = home_station
         self.work_station = work_station
         self.commuter_id = commuter_id
-        # commuter always starts at home
-        self.current_station = home_station 
-
-    # resets commuter's location to back home
-    def reset_location(self):
-        self.current_station = self.home_station
-
-    # checks if the commuter is at work 
-    def is_at_work(self) -> bool:
-        return self.current_station == self.work_station
 
     # Represents the start and end of the route where the commuter wants to reach(home and work)
     def get_start_destination_pair(self) -> Tuple[str, str]:
@@ -28,46 +22,77 @@ class Commuter:
 
 # Manages multiple commuters at once, each has a start location (home) and work destination
 class CommuterPopulation:
-
-    # Initializes the population
-    # mbta_graph: transit network
-    # num_commuters: # of commuters
-    def initialization(self, mbta_graph: nx.DiGraph, num_commuters: int = 100):
+    """Manages a population of commuters, each with a home and work station."""
+    def __init__(self, mbta_graph: nx.Graph, num_commuters: int = 1000, random_seed: int = 42):
         self.graph = mbta_graph
         self.num_commuters = num_commuters
         self.commuters: List[Commuter] = []
-        # Gets all stations from the graph(stations are nodes)
+        # Gets all stations from the graph (stations are nodes)
         self.station_list = list(mbta_graph.nodes())
-
+        self.rng = np.random.default_rng(random_seed)
         # creates commuters
         self.generate_commuters()
 
-    # function that creates commuters
+
     def generate_commuters(self):
+        """Generates commuters with random home and work stations."""
         for i in range(self.num_commuters):
-            # chooses a random home location
-            home = random.choice(self.station_list)
-            # chooses a random work destination location
-            work = random.choice(self.station_list)
+            home = self.rng.choice(self.station_list)
+            work = self.rng.choice(self.station_list)
 
             # Picks a different location if work location is same as home
             while work == home:
-                work = random.choice(self.station_list)
+                work = self.rng.choice(self.station_list)
 
-            # single commuter is created
             commuter = Commuter(home, work, i)
-            
-            # single commuter is added to list
             self.commuters.append(commuter)
 
-    # resents commuters locations to home
-    def reset_location(self):
-        for commuter in self.commuters:
-            commuter.reset_location()
+    def update_graph(self, new_graph: nx.Graph):
+        """Updates the graph used for commute time calculations."""
+        self.graph = new_graph
 
-    # gives how many agenets are at different stops
-    def get_commuter_count_at_locations(self):
-        location_counts = {station: 0 for station in self.station_list}
-        for commuter in self.commuters:
-            location_counts[commuter.current_station] += 1
-        return location_counts
+    @staticmethod
+    def haversine(lat1, lon1, lat2, lon2):
+        r = 6371.0
+        dlat = math.radians(lat2 - lat1)
+        dlon = math.radians(lon2 - lon1)
+
+        a = (
+            math.sin(dlat / 2) ** 2
+            + math.cos(math.radians(lat1))
+            * math.cos(math.radians(lat2))
+            * math.sin(dlon / 2) ** 2
+        )
+        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+        return r * c
+    
+    def heuristic(self, u, v):
+        lon1, lat1 = self.graph.nodes[u]["lon"], self.graph.nodes[u]["lat"]
+        lon2, lat2 = self.graph.nodes[v]["lon"], self.graph.nodes[v]["lat"]
+
+        distance_km = self.haversine(lat1, lon1, lat2, lon2)
+
+        speed_kmh = 55  # TODO: find average speed of MBTA trains in km/h
+
+        return (distance_km / speed_kmh) * 60
+
+    def get_mean_commute_time(self):
+        """Calculates the mean commute time for all commuters based on the current graph."""
+        total = 0.0
+        n = len(self.commuters)
+
+        for c in self.commuters:
+            try:
+                dist = nx.astar_path_length(
+                    self.graph,
+                    c.home_station,
+                    c.work_station,
+                    heuristic=self.heuristic,
+                    weight="travel_time_min"
+                )
+            except nx.NetworkXNoPath:
+                dist = DISCONNECT_PENALTY
+
+            total += dist
+
+        return total / n
