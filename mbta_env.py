@@ -35,7 +35,7 @@ import copy
 import pickle    
 from typing import Any 
 import networkx as nx  
-from AI_MBTA_Project.commuter_model import CommuterPopulation
+from commuter_model import CommuterPopulation
 import numpy as np     
 import gymnasium as gym
 from gymnasium import spaces
@@ -124,7 +124,8 @@ class MBTAEnv(gym.Env):
         self._step_count: int = 0
         self._baseline_mean: float = None  # set in reset()
 
-        self.commuters = CommuterPopulation(self.graph, number_of_commuters)
+        # create the commuter population with the given graph and number of commuters
+        self.commuters = CommuterPopulation(base_graph, number_of_commuters)
 
     def reset(
         self,
