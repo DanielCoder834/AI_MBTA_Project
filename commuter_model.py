@@ -6,7 +6,7 @@ import networkx as nx
 # represents a commuter(commuter) commuting from home to work(start to destination)
 class Commuter:
     # initializes the commuter
-    def initialization(self, home_station: str, work_station: str, commuter_id: int):
+    def __init__(self, home_station: str, work_station: str, commuter_id: int):
         self.home_station = home_station
         self.work_station = work_station
         self.commuter_id = commuter_id
@@ -32,7 +32,7 @@ class CommuterPopulation:
     # Initializes the population
     # mbta_graph: transit network
     # num_commuters: # of commuters
-    def initialization(self, mbta_graph: nx.DiGraph, num_commuters: int = 100):
+    def __init__(self, mbta_graph: nx.DiGraph, num_commuters: int = 100):
         self.graph = mbta_graph
         self.num_commuters = num_commuters
         self.commuters: List[Commuter] = []
@@ -71,3 +71,60 @@ class CommuterPopulation:
         for commuter in self.commuters:
             location_counts[commuter.current_station] += 1
         return location_counts
+
+    def get_commute_times(self) -> Dict[int, float]:
+        """
+        Calculate commute times for all agents.
+        Returns dict mapping agent_id to commute time.
+        Note: This calculates the full path: home -> station -> ... -> station -> work
+        """
+        commute_times = {}
+        for commuter in self.commuters:
+            try:
+                # Calculate shortest path from home to work through the graph
+                path = nx.shortest_path(
+                    self.graph,
+                    source=commuter.home_location,
+                    target=commuter.work_location,
+                    weight="travel_time",
+                )
+
+                # Sum up travel times along path
+                total_time = 0
+                for i in range(len(path) - 1):
+                    edge_data = self.graph[path[i]][path[i + 1]]
+                    total_time += edge_data.get("travel_time", 5.0)
+
+                commute_times[commuter.commuter_id] = total_time
+            except nx.NetworkXNoPath:
+                # If no path exists, assign a large penalty time
+                commute_times[commuter.commuter_id] = float("inf")
+
+        return commute_times
+
+    def step_agents_toward_work(self):
+        """
+        Simulate one step of agent movement toward work.
+        Agents move along the shortest path from home to work.
+        """
+        for commuter in self.commuters:
+            if not commuter.is_at_work():
+                try:
+                    # Get the full shortest path from current location to work
+                    path = nx.shortest_path(
+                        self.graph,
+                        source=commuter.current_location,
+                        target=commuter.work_location,
+                        weight="travel_time",
+                    )
+
+                    # Move to the next node in the path (if not already at destination)
+                    if len(path) > 1:
+                        commuter.current_location = path[1]
+
+                except nx.NetworkXNoPath:
+                    # If no path exists, agent stays in place
+                    pass
+                except Exception:
+                    # If anything goes wrong, keep agent in place
+                    pass
