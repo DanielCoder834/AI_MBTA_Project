@@ -81,6 +81,7 @@ class MBTAEnv(gym.Env):
         disconnect_penalty: float = DISCONNECT_PENALTY,
         number_of_commuters: int = 20
         render: bool = False,
+        number_of_commuters: int = 20
     ):
         super().__init__()
 
@@ -133,6 +134,8 @@ class MBTAEnv(gym.Env):
 
         self.render_mode = "human"
         self._render_enabled = render
+
+        self.commuters = CommuterPopulation(self.graph, number_of_commuters)
 
     def reset(
         self,
