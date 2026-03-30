@@ -1,4 +1,10 @@
 # AI_MBTA_Project
 
 network.py:
-- created networkx rep of MBTA using data from Google
+- networkx representatiom of MBTA using data from Google
+
+commuter_model.py:
+- represents a commmuter on the MBTA
+
+mbta_env:
+- reinforcement learning enviorment for the MBTA
