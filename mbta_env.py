@@ -48,12 +48,11 @@ import matplotlib.pyplot as plt
 # CONSTANTS
 
 # If two stations can't reach each other at all, we add this penalty to the total travel time so the agent learns to avoid disconnecting the network.
-DISCONNECT_PENALTY = 120.0
+DISCONNECT_PENALTY = 500.0
 
 # When the agent adds a brand new edge it gets assigned a random travel time. 
 # TODO: we could make better by basing it on the distance between the two stations.
-DEFAULT_EDGE_WEIGHT = 3
-MAX_NEW_WEIGHT = 30
+
 
 # How many steps the agent gets per episode before the game ends.
 MAX_STEPS = 500
@@ -79,7 +78,6 @@ class MBTAEnv(gym.Env):
         base_graph: nx.Graph,
         max_steps: int = MAX_STEPS,
         disconnect_penalty: float = DISCONNECT_PENALTY,
-        number_of_commuters: int = 20,
         render: bool = False,
     ):
         super().__init__()
@@ -105,7 +103,7 @@ class MBTAEnv(gym.Env):
         # action_type = {0, 1, 2}  — which operation to perform (add/remove/reroute)
         # node_u, node_v           — indices of the two stations involved in the action
         # aux_node                 — only used for reroute actions - specifies the new station to connect to
-        self.action_space = spaces.MultiDiscrete([3, self.N, self.N, self.N])
+        self.action_space = spaces.MultiDiscrete([2, self.N, self.N])
 
         # observation space 
         # The observation is a 1D array with two parts:
@@ -121,17 +119,14 @@ class MBTAEnv(gym.Env):
         # Ex. [ edge_0_0, edge_0_1, ..., edge_N-1_N-1, normalized_mean_travel_time ]
         high = np.full(self.N * self.N + 1, np.float32(DISCONNECT_PENALTY))
         self.observation_space = spaces.Box(
-            low=np.zeros_like(high), high=high, dtype=np.float32
-        )
-
-        self._step_count: int = 0
+            low=np.array([0.0, 0.0, -1.0, 0.0, 0.0], dtype=np.float32),
+            high=np.array([1.0, 1.0,  1.0, 1.0, 1.0], dtype=np.float32),
+)
         self._baseline_mean: float = None  # set in reset()
 
         # create the commuter population with the given graph and number of commuters
-        self.commuters = CommuterPopulation(base_graph, number_of_commuters)
-        self.num_commuters = number_of_commuters
+        self.commuters = CommuterPopulation(base_graph)
 
-        self.render_mode = "human"
         self._render_enabled = render
 
     def reset(
@@ -149,13 +144,13 @@ class MBTAEnv(gym.Env):
         super().reset(seed=seed)
 
         self._G = copy.deepcopy(self._base_graph)
-        self.commuters = CommuterPopulation(self._G, self.num_commuters)
+        self.commuters.update_graph(self._G)
         self._step_count = 0
         self._baseline_mean = self._mean_travel_time()
         self._prev_mean_tt = self._baseline_mean
        
 
-        obs  = self._observation(self._baseline_mean)
+        obs = self._observation()
         info = self._info()
         return obs, info
 
@@ -172,17 +167,16 @@ class MBTAEnv(gym.Env):
 
         Returns: (obs, reward, terminated, truncated, info)
         """
-        action_type, u_idx, v_idx, aux_idx = (
-            int(action[0]), int(action[1]), int(action[2]), int(action[3])
+        action_type, u_idx, v_idx = (
+            int(action[0]), int(action[1]), int(action[2])
         )
 
         # convert integer indices back to station name strings.
         u   = self.nodes[u_idx]
         v   = self.nodes[v_idx]
-        aux = self.nodes[aux_idx]
 
         # mutate the graph for chosen action.
-        self._apply_action(action_type, u, v, aux)
+        self._apply_action(action_type, u, v)
         self.commuters.update_graph(self._G)  
         self._step_count += 1
 
@@ -197,8 +191,8 @@ class MBTAEnv(gym.Env):
         terminated = False
         truncated  = self._step_count >= self.max_steps
 
-        obs  = self._observation(mean_tt)
-        info = self._info(mean_tt=mean_tt)
+        obs = self._observation()
+        info = self._info()
         return obs, reward, terminated, truncated, info
 
     def render(self):
@@ -226,7 +220,7 @@ class MBTAEnv(gym.Env):
         self._fig.canvas.flush_events()
         plt.pause(0.001)
 
-    def _apply_action(self, action_type: int, u: str, v: str, aux: str):
+    def _apply_action(self, action_type: int, u: str, v: str):
         """
         Modify the graph based on the chosen action.
 
@@ -239,54 +233,50 @@ class MBTAEnv(gym.Env):
         if action_type == 0:
             # ADD_EDGE
             if u != v and not self._G.has_edge(u, v):
-                w = self.np_random.integers(1, MAX_NEW_WEIGHT + 1)
-                self._G.add_edge(u, v, travel_time_min=int(w), line="new")
+                w = self.commuters.edge_weight_from_distance(u, v)
+                self._G.add_edge(u, v, travel_time_min=w, line="new")
 
         elif action_type == 1:
             # REMOVE_EDGE
             if self._G.has_edge(u, v):
-                self._G.remove_edge(u, v)
+                bridges = set(map(frozenset, nx.bridges(self._G)))
+                if frozenset({u, v}) not in bridges:
+                    self._G.remove_edge(u, v)
 
-        elif action_type == 2:
-            # REROUTE 
-            # Move one endpoint of the edge u–v so it now connects u–aux instead.
-            if u != aux and self._G.has_edge(u, v) and not self._G.has_edge(u, aux):
-                # Copy all the edge attributes (e.g. travel_time_min, line name)
-                # from the old edge so the rerouted edge keeps the same metadata.
-                # TODO: change to updating the new travel time + make define a new line name for rerouted edges.
-                data = dict(self._G[u][v])
-                self._G.remove_edge(u, v)
-                self._G.add_edge(u, aux, **data)
 
     def _mean_travel_time(self) -> float:
         return self.commuters.get_mean_commute_time()
+    def _reachability(self) -> float:
+        reachable = 0
+        for c in self.commuters.commuters:
+            if nx.has_path(self._G, c.home_station, c.work_station):
+                reachable += 1
+        return reachable / max(len(self.commuters.commuters), 1)
+    def _observation(self) -> np.ndarray:
+        mean_tt = self._mean_travel_time()
 
-    def _observation(self, mean_tt: float) -> np.ndarray:
-        """
-        The observation has two parts:
+        norm_tt = float(np.clip(mean_tt / DISCONNECT_PENALTY, 0.0, 1.0))
 
-        Part 1 — N×N weight matrix (flattened):
-          mat[i][j] = travel time of the DIRECT edge between station i and j
-          mat[i][j] = 0 if there is no direct connection
+        n_edges = self._G.number_of_edges()
+        norm_edges = float(n_edges / max(self.N ** 2, 1))
 
-        Part 2 — Normalised mean travel time (single float):
-          mean_travel_time / DISCONNECT_PENALTY
+        improvement = (
+            (self._baseline_mean - mean_tt) / self._baseline_mean
+            if self._baseline_mean and self._baseline_mean > 0
+            else 0.0
+        )
+        norm_improvement = float(np.clip(improvement, -1.0, 1.0))
 
-        Total shape: (N*N + 1,)
-        """
-        mat = np.zeros((self.N, self.N), dtype=np.float32)
+        reachability = self._reachability()
 
-        # fill in edge weights from the current graph
-        for u, v, d in self._G.edges(data=True):
-            i, j = self._node_idx[u], self._node_idx[v]
-            # get the travel time or use DEFAULT_EDGE_WEIGHT if missing
-            # TODO: make sure none are missing and remove the default fallback
-            w = float(d.get("travel_time_min", DEFAULT_EDGE_WEIGHT))
-            mat[i, j] = w
-            mat[j, i] = w
+        degrees = [d for _, d in self._G.degree()]
+        mean_degree = float(np.mean(degrees)) / self.N if degrees else 0.0
 
-        norm = np.float32(mean_tt / self.disconnect_penalty)
-        return np.append(mat.flatten(), norm)
+        return np.array(
+            [norm_tt, norm_edges, norm_improvement, reachability, mean_degree],
+            dtype=np.float32,
+        )
+
 
     def _info(self, mean_tt: float | None = None) -> dict:
         """
