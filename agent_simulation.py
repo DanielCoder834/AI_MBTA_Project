@@ -54,7 +54,7 @@ class CommuterPopulation:
             while work == home:
                 work = random.choice(self.station_list)
 
-            # single commuter is created
+            # single commuter is createds
             commuter = Commuter(home, work, i)
             
             # single commuter is added to list
