@@ -4,7 +4,7 @@ import math
 import numpy as np
 
 DEFAULT_EDGE_WEIGHT = 3
-DISCONNECT_PENALTY = 120.0
+DISCONNECT_PENALTY = 500.0
 
 # Commuter for RL MBTA environment
 # represents a commuter(commuter) commuting from home to work(start to destination)
@@ -23,9 +23,8 @@ class Commuter:
 # Manages multiple commuters at once, each has a start location (home) and work destination
 class CommuterPopulation:
     """Manages a population of commuters, each with a home and work station."""
-    def __init__(self, mbta_graph: nx.Graph, num_commuters: int = 1000, random_seed: int = 42):
+    def __init__(self, mbta_graph: nx.Graph, random_seed: int = 42):
         self.graph = mbta_graph
-        self.num_commuters = num_commuters
         self.commuters: List[Commuter] = []
         # Gets all stations from the graph (stations are nodes)
         self.station_list = list(mbta_graph.nodes())
@@ -35,17 +34,12 @@ class CommuterPopulation:
 
 
     def generate_commuters(self):
-        """Generates commuters with random home and work stations."""
-        for i in range(self.num_commuters):
-            home = self.rng.choice(self.station_list)
-            work = self.rng.choice(self.station_list)
-
-            # Picks a different location if work location is same as home
-            while work == home:
-                work = self.rng.choice(self.station_list)
-
-            commuter = Commuter(home, work, i)
-            self.commuters.append(commuter)
+        commuter_id = 0
+        for home in self.station_list:
+            for work in self.station_list:
+                if home != work:
+                    self.commuters.append(Commuter(home, work, commuter_id))
+                    commuter_id += 1
 
     def update_graph(self, new_graph: nx.Graph):
         """Updates the graph used for commute time calculations."""
@@ -90,9 +84,16 @@ class CommuterPopulation:
                     heuristic=self.heuristic,
                     weight="travel_time_min"
                 )
-            except nx.NetworkXNoPath:
-                dist = DISCONNECT_PENALTY
-
-            total += dist
+                total += dist
+            except (nx.NetworkXNoPath, nx.NodeNotFound):
+                total += DISCONNECT_PENALTY
 
         return total / n
+    def edge_weight_from_distance(self, u: str, v: str) -> float:
+        try:
+            lat1, lon1 = self.graph.nodes[u]["lat"], self.graph.nodes[u]["lon"]
+            lat2, lon2 = self.graph.nodes[v]["lat"], self.graph.nodes[v]["lon"]
+        except KeyError:
+            return DEFAULT_EDGE_WEIGHT
+        km = self.haversine(lat1, lon1, lat2, lon2)
+        return float(max(1.0, round((km / 30.0) * 60.0, 1)))
