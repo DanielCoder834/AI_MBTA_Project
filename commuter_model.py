@@ -30,16 +30,22 @@ class CommuterPopulation:
         self.station_list = list(mbta_graph.nodes())
         self.rng = np.random.default_rng(random_seed)
         # creates commuters
-        self.generate_commuters()
+        self.generate_commuters(max_commuters=100)
 
-
-    def generate_commuters(self):
+    def generate_commuters(self, max_commuters: int = 100):
         commuter_id = 0
+        pairs = []
+
         for home in self.station_list:
             for work in self.station_list:
                 if home != work:
-                    self.commuters.append(Commuter(home, work, commuter_id))
-                    commuter_id += 1
+                    pairs.append((home, work))
+
+        self.rng.shuffle(pairs)
+
+        for home, work in pairs[:max_commuters]:
+            self.commuters.append(Commuter(home, work, commuter_id))
+            commuter_id += 1
 
     def update_graph(self, new_graph: nx.Graph):
         """Updates the graph used for commute time calculations."""
