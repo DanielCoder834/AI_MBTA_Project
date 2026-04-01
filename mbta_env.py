@@ -10,24 +10,27 @@ Reward: negative mean travel time for all commuters (start-destination pairs)
 - Disconnected pairs are penalised with a large constant.
 
 Observation:
-- N×N adjacency matrix of minimum travel times (0 = no edge)
-- Scalar: current mean travel time (normalised)
+A 1D array of 5 normalized scalar features describing current MBTA network state:
+  1: normalized mean travel time [0, 1]
+     - mean commuter travel time divided by DISCONNECT_PENALTY
+  2: normalized edge count [0, 1]
+     - current number of edges divided by N^2
+     - how dense the network currently is
+  3: normalized improvement [-1, 1]
+     - percent improvement relative to baseline network
+     - (baseline_mean − current_mean) / baseline_mean
+  4: reachability ratio [0, 1]
+     - fraction of commuter origin–destination pairs that remain connected
+  5: normalized mean node degree [0, 1]
+     - average node degree divided by number of stations N
+     - overall network connectivity level
 
-How to use:
-    import pickle, gymnasium
-    from mbta_env import MBTAEnv
-
-    with open("mbta_data/mbta_graph.pkl", "rb") as f:
-        G = pickle.load(f)
-
-    env = MBTAEnv(G)
-    obs, info = env.reset()
-
-    for _ in range(1000):
-        action = env.action_space.sample()
-        obs, reward, terminated, truncated, info = env.step(action)
-        if terminated or truncated:
-            obs, info = env.reset()
+Example observation:
+[ normalized_mean_travel_time,
+  normalized_edge_density,
+  normalized_improvement,
+  reachability_ratio,
+  normalized_mean_degree ]
 """
 
 import copy  
@@ -46,14 +49,7 @@ import matplotlib.pyplot as plt
 
 # CONSTANTS
 
-# If two stations can't reach each other at all, we add this penalty to the total travel time so the agent learns to avoid disconnecting the network.
 DISCONNECT_PENALTY = 500.0
-
-# When the agent adds a brand new edge it gets assigned a random travel time. 
-# TODO: we could make better by basing it on the distance between the two stations.
-
-
-# How many steps the agent gets per episode before the game ends.
 MAX_STEPS = 500
 
 
@@ -67,6 +63,8 @@ class MBTAEnv(gym.Env):
         Maximum steps per episode.
     disconnect_penalty : float
         Travel-time penalty charged per unreachable start-destination station pair.
+    render : bool
+        Whether to render the network graph after each action (slows down training).
     """
 
     # rendering modes we support
@@ -94,40 +92,15 @@ class MBTAEnv(gym.Env):
 
         # working copy of the graph the agent will modify
         self._G = None
+
+        # variables to track reward and improvement calculations
         self._prev_mean_tt = None
         self._baseline_mean = None
         self._step_count = 0
 
-        # action space 
-        # - each action is tuple of 3 ints:
-        # - [action_type, node_u, node_v]
-        #
-        # action_type = {0, 1}  — which operation to perform (add/remove edge)
-        # node_u, node_v        — indices of the two stations involved in the action
+        # [action_type, node_u, node_v]
         self.action_space = spaces.MultiDiscrete([2, self.N, self.N])
 
-        # observation space 
-        # a 1D array of 5 normalized scalar features describing current MBTA network state
-        #
-        # features: 
-        # 1: normalized mean travel time [0, 1]
-        #     - mean commuter travel time divided by DISCONNECT_PENALTY
-        #
-        # 2: normalized edge count [0, 1]
-        #     - current number of edges divided by N^2
-        #     - how dense the network currently is
-        #
-        # 3: normalized improvement [-1, 1]
-        #     - percent improvement relative to baseline network
-        #     - (baseline_mean − current_mean) / baseline_mean
-        #
-        # 4: reachability ratio [0, 1]
-        #     - fraction of commuter origin–destination pairs that remain connected
-        #
-        # 5: normalized mean node degree [0, 1]
-        #     - average node degree divided by number of stations N
-        #     - overall network connectivity level
-        #
         # example observation:
         # [ normalized_mean_travel_time,
         #   normalized_edge_density,
@@ -163,7 +136,6 @@ class MBTAEnv(gym.Env):
         self._baseline_mean = self._mean_travel_time()
         self._prev_mean_tt = self._baseline_mean
         reachability = self._reachability()
-        
         obs = self._observation(self._baseline_mean, reachability)
         info = self._info(self._baseline_mean)
         return obs, info
