@@ -21,6 +21,8 @@ class Commuter:
 
 
 # Manages multiple commuters at once, each has a start location (home) and work destination
+# Initialized commuters, pulls all stations and calls generate_commuters
+# Random number generator is used to assign home and work pairs
 class CommuterPopulation:
     """Manages a population of commuters, each with a home and work station."""
     def __init__(self, mbta_graph: nx.Graph, random_seed: int = 42):
@@ -32,6 +34,7 @@ class CommuterPopulation:
         # creates commuters
         self.generate_commuters()
 
+    # Generates commuters by finding all home work pairs
     def generate_commuters(self):
         commuter_id = 0
         pairs = []
@@ -47,25 +50,35 @@ class CommuterPopulation:
             self.commuters.append(Commuter(home, work, commuter_id))
             commuter_id += 1
 
+    # updates graph for commute time calculations
     def update_graph(self, new_graph: nx.Graph):
-        """Updates the graph used for commute time calculations."""
+        # replaces current graph with new one
         self.graph = new_graph
 
+    # computes distance between two locations using their latitude and longitude
+    # uses a* with haversine heruistic to find shortest path for commuters
     @staticmethod
     def haversine(lat1, lon1, lat2, lon2):
+        # Earth radius in km
         r = 6371.0
+        # Haversine formula
+        # degrees to radians
         dlat = math.radians(lat2 - lat1)
         dlon = math.radians(lon2 - lon1)
 
+        # square of half the chord length 
         a = (
             math.sin(dlat / 2) ** 2
             + math.cos(math.radians(lat1))
             * math.cos(math.radians(lat2))
             * math.sin(dlon / 2) ** 2
         )
+        # Computes the angular distance 
         c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
         return r * c
     
+    
+    # Heuristic formula for A*
     def heuristic(self, u, v):
         lon1, lat1 = self.graph.nodes[u]["lon"], self.graph.nodes[u]["lat"]
         lon2, lat2 = self.graph.nodes[v]["lon"], self.graph.nodes[v]["lat"]
@@ -74,15 +87,18 @@ class CommuterPopulation:
 
         speed_kmh = 55  # TODO: find average speed of MBTA trains in km/h
 
+        # Coverts travel time to minutes
         return (distance_km / speed_kmh) * 60
 
+    # calculates the mean commute time of all commuters based on graph
     def get_mean_commute_time(self):
-        """Calculates the mean commute time for all commuters based on the current graph."""
         total = 0.0
         n = len(self.commuters)
 
+        # loops through each commuter and calculates the travel time of shortest path
         for c in self.commuters:
             try:
+                # uses A* to compute travel time between home and work
                 dist = nx.astar_path_length(
                     self.graph,
                     c.home_station,
@@ -95,6 +111,8 @@ class CommuterPopulation:
                 total += DISCONNECT_PENALTY
 
         return total / n
+    
+    # computes travel time based on distance
     def edge_weight_from_distance(self, u: str, v: str) -> float:
         try:
             lat1, lon1 = self.graph.nodes[u]["lat"], self.graph.nodes[u]["lon"]
