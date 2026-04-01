@@ -30,9 +30,9 @@ class CommuterPopulation:
         self.station_list = list(mbta_graph.nodes())
         self.rng = np.random.default_rng(random_seed)
         # creates commuters
-        self.generate_commuters(max_commuters=100)
+        self.generate_commuters()
 
-    def generate_commuters(self, max_commuters: int = 100):
+    def generate_commuters(self):
         commuter_id = 0
         pairs = []
 
@@ -43,7 +43,7 @@ class CommuterPopulation:
 
         self.rng.shuffle(pairs)
 
-        for home, work in pairs[:max_commuters]:
+        for home, work in pairs:
             self.commuters.append(Commuter(home, work, commuter_id))
             commuter_id += 1
 
