@@ -155,38 +155,9 @@ class MBTAEnv(gym.Env):
         return False
 
     def action_masks(self) -> list[np.ndarray]:
-        # action mask for MultiDiscrete([2, N, N]) to describe which actions are valid
+        return np.ones(2 + self.N + self.N, dtype=bool)
 
-        # for SB3 MaskablePPO + MultiDiscrete, return one boolean array per action dimension:
-        #    - mask[0]: valid action_type values
-        #    - mask[1]: valid u indices
-        #    - mask[2]: valid v indices
 
-        # validity depends on (action_type, u, v), so safest mask:
-        #   - allows both action types only if each has at least one valid (u, v)
-        #   - allows all u, v indices, then reject invalid full triples in step() as a fallback
-        add_exists = False
-        remove_exists = False
-
-        for u in self.nodes:
-            for v in self.nodes:
-                if self._is_valid_add(u, v):
-                    add_exists = True
-                if self._is_valid_remove(u, v):
-                    remove_exists = True
-                if add_exists and remove_exists:
-                    break
-            if add_exists and remove_exists:
-                break
-
-        action_type_mask = np.array([add_exists, remove_exists], dtype=bool)
-
-        # multiDiscrete masks are per-dimension, not full joint masks
-        # so keep node dimensions open and do exact validity check in step()
-        u_mask = np.ones(self.N, dtype=bool)
-        v_mask = np.ones(self.N, dtype=bool)
-
-        return np.concatenate([action_type_mask, u_mask, v_mask])
     
     @staticmethod
     def _haversine(lat1, lon1, lat2, lon2):
@@ -382,7 +353,7 @@ if __name__ == "__main__":
     check_env(env, warn=True)
     print("check_env passed.\n")
 
-    obs, info = env.reset(seed=42)
+    obs, info = env.reset()
     print(f"Baseline mean travel time : {info['mean_travel_time_min']:.2f} min")
     print(f"Observation shape         : {obs.shape}")
     print(f"Action space              : {env.action_space}\n")
