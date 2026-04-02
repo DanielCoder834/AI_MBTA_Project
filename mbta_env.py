@@ -61,7 +61,8 @@ class MBTAEnv(gym.Env):
         self._step_count = 0
 
         # [action_type, node_u, node_v]
-        self.action_space = spaces.MultiDiscrete([2, self.N, self.N])
+        self.num_actions = 2 * self.N * self.N
+        self.action_space = spaces.Discrete(self.num_actions)
 
         # example observation:
         # [ normalized_mean_travel_time,
@@ -74,6 +75,18 @@ class MBTAEnv(gym.Env):
             high=np.array([1.0, 1.0,  1.0, 1.0, 1.0], dtype=np.float32),
             dtype=np.float32,
         )
+    
+    # encode and decode action for discrete action space
+    def encode_action(self, action_type: int, u_idx: int, v_idx: int) -> int:
+        return action_type * (self.N * self.N) + u_idx * self.N + v_idx
+
+    def decode_action(self, action: int) -> tuple[int, int, int]:
+        action = int(action)
+        action_type = action // (self.N * self.N)
+        rem = action % (self.N * self.N)
+        u_idx = rem // self.N
+        v_idx = rem % self.N
+        return action_type, u_idx, v_idx
 
     def reset(self, *, seed: int | None = None, options: dict[str, Any] | None = None):
         """
@@ -116,11 +129,17 @@ class MBTAEnv(gym.Env):
             return self._is_valid_remove(u, v)
         return False
 
-    def action_masks(self) -> list[np.ndarray]:
-        return np.ones(2 + self.N + self.N, dtype=bool)
+    def action_masks(self) -> np.ndarray:
+        mask = np.zeros(self.num_actions, dtype=bool)
 
+        for action_type in range(2):
+            for u_idx, u in enumerate(self.nodes):
+                for v_idx, v in enumerate(self.nodes):
+                    a = self.encode_action(action_type, u_idx, v_idx)
+                    mask[a] = self._is_valid_action(action_type, u, v)
 
-    
+        return mask
+
     @staticmethod
     def _haversine(lat1, lon1, lat2, lon2):
         """Calculate the great circle distance in kilometers between two points on the Earth."""
@@ -170,7 +189,7 @@ class MBTAEnv(gym.Env):
     
     def step(self, action: np.ndarray):
         """ applies the given action to the environment and returns the new observation, reward, done flags, and info. """
-        action_type, u_idx, v_idx = map(int, action)
+        action_type, u_idx, v_idx = self.decode_action(action)
 
         u = self.nodes[u_idx]
         v = self.nodes[v_idx]
@@ -194,6 +213,8 @@ class MBTAEnv(gym.Env):
 
         obs = self._observation(mean_tt, reachability)
         info = self._info(mean_tt)
+        info["last_action"] = (action_type, u, v)
+        info["action_valid"] = valid
 
         return obs, reward, terminated, truncated, info
 
