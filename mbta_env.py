@@ -6,10 +6,10 @@ import copy
 import pickle    
 import time
 from typing import Any 
-from matplotlib.pylab import norm
+
+import gymnasium as gym
 import networkx as nx  
 import numpy as np     
-import gymnasium as gym
 from gymnasium import spaces
 from gymnasium.utils.env_checker import check_env
 import matplotlib.pyplot as plt
@@ -18,7 +18,8 @@ import math
 # CONSTANTS
 DISCONNECT_PENALTY = 500.0
 MAX_STEPS = 500
-DEFAULT_EDGE_WEIGHT = 3
+EDGE_COST = 0.05 
+DEFAULT_EDGE_WEIGHT = 10.0
 
 class MBTAEnv(gym.Env):
     """
@@ -28,8 +29,6 @@ class MBTAEnv(gym.Env):
         The starting MBTA network.
     max_steps : int
         Maximum steps per episode.
-    disconnect_penalty : float
-        Travel-time penalty charged per unreachable start-destination station pair.
     render : bool
         Whether to render the network graph after each action (slows down training).
     """
@@ -40,7 +39,6 @@ class MBTAEnv(gym.Env):
         self,
         base_graph: nx.Graph,
         max_steps: int = MAX_STEPS,
-        disconnect_penalty: float = DISCONNECT_PENALTY,
         render: bool = False,
     ):
         super().__init__()
@@ -48,10 +46,17 @@ class MBTAEnv(gym.Env):
         self._base_graph = base_graph
         self.nodes: list[str] = sorted(self._base_graph.nodes())
         self.N: int = len(self.nodes)
-
         self.max_steps = max_steps
-        self.disconnect_penalty = disconnect_penalty
-        self._render_enabled = render
+        
+        self.all_edges = [
+            (u, v) for i, u in enumerate(self.nodes) for v in self.nodes[i+1:]
+        ]
+        self.action_space = spaces.MultiDiscrete([2, self.N, self.N])
+        self.observation_space = spaces.Box(
+            low=np.array([0.0, 0.0, -1.0, 0.0, 0.0], dtype=np.float32),
+            high=np.array([1.0, 1.0,  1.0, 1.0, 1.0], dtype=np.float32),
+            dtype=np.float32,
+        )
 
         # copy of graph the agent will modify
         self._G = None
@@ -60,20 +65,9 @@ class MBTAEnv(gym.Env):
         self._baseline_mean = None
         self._step_count = 0
 
-        # [action_type, node_u, node_v]
-        self.action_space = spaces.MultiDiscrete([2, self.N, self.N])
 
-        # example observation:
-        # [ normalized_mean_travel_time,
-        #   normalized_edge_density,
-        #   normalized_improvement,
-        #   reachability_ratio,
-        #   normalized_mean_degree ]
-        self.observation_space = spaces.Box(
-            low=np.array([0.0, 0.0, -1.0, 0.0, 0.0], dtype=np.float32),
-            high=np.array([1.0, 1.0,  1.0, 1.0, 1.0], dtype=np.float32),
-            dtype=np.float32,
-        )
+
+        self._render_enabled = render
 
     def reset(self, *, seed: int | None = None, options: dict[str, Any] | None = None):
         """
@@ -89,7 +83,7 @@ class MBTAEnv(gym.Env):
             for n, d in self._G.nodes(data=True)
             if d.get("lon") is not None and d.get("lat") is not None
         }
-
+   
         self._baseline_mean = self._mean_travel_time()
         self._prev_mean_tt = self._baseline_mean
         reachability = self._reachability()
@@ -119,27 +113,9 @@ class MBTAEnv(gym.Env):
     def action_masks(self) -> list[np.ndarray]:
         """
         Returns a list of boolean arrays indicating which actions are valid.
+        Always returns a mask of all True for right now.
         """
-        add_exists = False
-        remove_exists = False
-
-        for u in self.nodes:
-            for v in self.nodes:
-                if self._is_valid_add(u, v):
-                    add_exists = True
-                if self._is_valid_remove(u, v):
-                    remove_exists = True
-                if add_exists and remove_exists:
-                    break
-            if add_exists and remove_exists:
-                break
-
-        action_type_mask = np.array([add_exists, remove_exists], dtype=bool)
-
-        u_mask = np.ones(self.N, dtype=bool)
-        v_mask = np.ones(self.N, dtype=bool)
-
-        return np.concatenate([action_type_mask, u_mask, v_mask])
+        return np.ones(2 + 2 * self.N, dtype=bool)
     
     @staticmethod
     def _haversine(lat1, lon1, lat2, lon2):
@@ -204,6 +180,9 @@ class MBTAEnv(gym.Env):
         reward = self._prev_mean_tt - mean_tt
         self._prev_mean_tt = mean_tt
 
+        # penalize for more edges 
+        reward -= EDGE_COST * self._G.number_of_edges()
+       
         # apply penalty for invalid actions - fallback for action masking
         if not valid:
             reward -= 1.0
@@ -251,7 +230,7 @@ class MBTAEnv(gym.Env):
                     continue
                 count += 1
                 dist = lengths.get(u, {}).get(v, None)
-                total += dist if dist is not None else self.disconnect_penalty
+                total += dist if dist is not None else DISCONNECT_PENALTY
 
         return total / count if count > 0 else 0.0
     
