@@ -117,29 +117,6 @@ class MBTAEnv(gym.Env):
         return False
 
     def action_masks(self) -> list[np.ndarray]:
-        """
-        Returns a list of boolean arrays indicating which actions are valid.
-        """
-        add_exists = False
-        remove_exists = False
-
-        for u in self.nodes:
-            for v in self.nodes:
-                if self._is_valid_add(u, v):
-                    add_exists = True
-                if self._is_valid_remove(u, v):
-                    remove_exists = True
-                if add_exists and remove_exists:
-                    break
-            if add_exists and remove_exists:
-                break
-
-        action_type_mask = np.array([add_exists, remove_exists], dtype=bool)
-
-        u_mask = np.ones(self.N, dtype=bool)
-        v_mask = np.ones(self.N, dtype=bool)
-
-        return np.concatenate([action_type_mask, u_mask, v_mask])
         return np.ones(2 + self.N + self.N, dtype=bool)
 
 
