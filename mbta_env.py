@@ -18,8 +18,9 @@ import math
 # CONSTANTS
 DISCONNECT_PENALTY = 500.0
 MAX_STEPS = 500
-EDGE_COST = 0.05 
 DEFAULT_EDGE_WEIGHT = 10.0
+ACTION_BUDGET = 100.0  # total budget per episode
+ACTION_COST = 1.0      # cost per action
 
 class MBTAEnv(gym.Env):
     """
@@ -53,8 +54,8 @@ class MBTAEnv(gym.Env):
         ]
         self.action_space = spaces.MultiDiscrete([2, self.N, self.N])
         self.observation_space = spaces.Box(
-            low=np.array([0.0, 0.0, -1.0, 0.0, 0.0], dtype=np.float32),
-            high=np.array([1.0, 1.0,  1.0, 1.0, 1.0], dtype=np.float32),
+            low=np.array([0.0, 0.0, -1.0, 0.0, 0.0, 0.0], dtype=np.float32),
+            high=np.array([1.0, 1.0,  1.0, 1.0, 1.0, 1.0], dtype=np.float32),
             dtype=np.float32,
         )
 
@@ -64,8 +65,6 @@ class MBTAEnv(gym.Env):
         self._prev_mean_tt = None
         self._baseline_mean = None
         self._step_count = 0
-
-
 
         self._render_enabled = render
 
@@ -86,9 +85,13 @@ class MBTAEnv(gym.Env):
    
         self._baseline_mean = self._mean_travel_time()
         self._prev_mean_tt = self._baseline_mean
+
+        self._budget = ACTION_BUDGET
+
         reachability = self._reachability()
         obs = self._observation(self._baseline_mean, reachability)
         info = self._info(self._baseline_mean)
+
         return obs, info
     
     def _is_valid_add(self, u: str, v: str) -> bool:
@@ -193,21 +196,24 @@ class MBTAEnv(gym.Env):
         valid = self._apply_action(action_type, u, v)
         self._step_count += 1
 
+        # deduct budget per action
+        self._budget -= ACTION_COST
+
         mean_tt = self._mean_travel_time()
         reachability = self._reachability()
         reward = self._prev_mean_tt - mean_tt
         self._prev_mean_tt = mean_tt
-        
-        # penalize for more edges 
-        reward -= EDGE_COST * self._G.number_of_edges()
+
+        if self._budget < 0:
+            reward -= abs(self._budget) * 2.0  # strong penalty for overspending
        
         # apply penalty for invalid actions - fallback for action masking
         if not valid:
             reward -= 1.0
 
-        # no "winning" state, agent just runs until max_steps
+        # no "winning" state, agent just runs until max_steps or budgt runs out
         terminated = False
-        truncated = self._step_count >= self.max_steps
+        truncated = self._step_count >= self.max_steps or self._budget <= 0
 
         obs = self._observation(mean_tt, reachability)
         info = self._info(mean_tt)
@@ -284,8 +290,10 @@ class MBTAEnv(gym.Env):
         degrees = [d for _, d in self._G.degree()]
         mean_degree = float(np.mean(degrees)) / self.N if degrees else 0.0
 
+        norm_budget = float(np.clip(self._budget / ACTION_BUDGET, 0.0, 1.0))
+
         return np.array(
-            [norm_tt, norm_edges, norm_improvement, reachability, mean_degree],
+            [norm_tt, norm_edges, norm_improvement, reachability, mean_degree, norm_budget],
             dtype=np.float32,
         )
 
