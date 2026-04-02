@@ -1,16 +1,19 @@
 """
 evaluate_agents.py
 
-Evaluates and compares the self-implemented DQN agent and the optional
-MaskablePPO agent on the MBTA environment.
+Evaluates and compares the implemented DQN agent and the
+imported MaskablePPO agent on the MBTA environment.
 
-For each agent, this script:
+For each agent:
 - loads the saved model
 - runs one evaluation episode
 - prints summary metrics
 - optionally renders the network changes
+- prints a comparison table
 
-At the end, it prints a comparison table.
+Run (creates mbta_graph.pkl, maskable_mbta_ppo.zip):
+    pip install stable-baselines3 sb3-contrib
+    python evaluate_agents.py
 """
 
 import os
@@ -19,15 +22,10 @@ import pickle
 from mbta_env import MBTAEnv
 from dqn_agent import DQNAgent
 
-# PPO is optional
-try:
-    from sb3_contrib import MaskablePPO
-    from sb3_contrib.common.maskable.utils import get_action_masks
-    PPO_AVAILABLE = True
-except ImportError:
-    PPO_AVAILABLE = False
+from sb3_contrib import MaskablePPO
+from sb3_contrib.common.maskable.utils import get_action_masks
 
-
+# file paths for required inputs and trained models
 GRAPH_PATH = "mbta_data/mbta_graph.pkl"
 DQN_MODEL_PATH = "dqn_mbta.pt"
 PPO_MODEL_PATH = "maskable_mbta_ppo.zip"
@@ -37,32 +35,40 @@ RENDER = True
 
 
 def evaluate_dqn(graph, render=False):
-    """Evaluate the self-implemented DQN agent for one episode."""
+    """Evaluate implemented DQN agent for one episode."""
+    # initialize env
     env = MBTAEnv(graph, max_steps=MAX_STEPS, render=render)
 
     state_dim = env.observation_space.shape[0]
     action_dim = env.action_space.n
 
+    # load trained agent
     agent = DQNAgent(state_dim=state_dim, action_dim=action_dim)
     agent.load(DQN_MODEL_PATH)
-    agent.epsilon = 0.0  # fully greedy at evaluation time
+     # fully greedy at evaluation time, disable exploration
+    agent.epsilon = 0.0
 
     obs, info = env.reset()
     done = False
     total_reward = 0.0
 
+    # run evaluation episode
     while not done:
+        # mask invalid actions
         valid_mask = env.action_masks()
+        # select best valid action
         action = agent.select_action(obs, valid_mask=valid_mask)
-
+        # apply action
         obs, reward, terminated, truncated, info = env.step(action)
+        
         total_reward += reward
 
         if render:
             env.render()
 
         done = terminated or truncated
-
+    
+    # performance metrics
     summary = {
         "agent": "DQN",
         "final_mean_tt": info["mean_travel_time_min"],
@@ -77,8 +83,10 @@ def evaluate_dqn(graph, render=False):
 
 
 def evaluate_ppo(graph, render=False):
-    """Evaluate the optional imported MaskablePPO agent for one episode."""
+    """Evaluate imported MaskablePPO agent for one episode."""
+    # initialize env
     env = MBTAEnv(graph, max_steps=MAX_STEPS, render=render)
+    # load trained PPO policy
     model = MaskablePPO.load(PPO_MODEL_PATH)
 
     obs, info = env.reset()
@@ -86,7 +94,9 @@ def evaluate_ppo(graph, render=False):
     total_reward = 0.0
 
     while not done:
+        # retrieve valid action mask from environment
         masks = get_action_masks(env)
+        # select deterministic action from trained policy
         action, _ = model.predict(obs, action_masks=masks, deterministic=True)
 
         obs, reward, terminated, truncated, info = env.step(action)
@@ -97,6 +107,7 @@ def evaluate_ppo(graph, render=False):
 
         done = terminated or truncated
 
+    # performance metrics
     summary = {
         "agent": "MaskablePPO",
         "final_mean_tt": info["mean_travel_time_min"],
@@ -121,7 +132,7 @@ def print_summary(summary):
 
 
 def print_comparison(results):
-    """Print a side-by-side comparison of all evaluated agents."""
+    """Print side by side comparison of all evaluated agents."""
     print("\n" + "=" * 72)
     print("FINAL COMPARISON")
     print("=" * 72)
@@ -147,6 +158,7 @@ def print_comparison(results):
 
     print("=" * 72)
 
+    # determine best performing agents
     best_tt = min(results, key=lambda r: r["final_mean_tt"])
     best_reward = max(results, key=lambda r: r["total_reward"])
 
@@ -155,6 +167,11 @@ def print_comparison(results):
 
 
 def main():
+    """
+    Main evaluation entry point
+    Loads MBTA graph and evaluates each available trained agent
+    """
+
     if not os.path.exists(GRAPH_PATH):
         raise FileNotFoundError(
             f"Could not find graph file: {GRAPH_PATH}\n"
@@ -173,7 +190,7 @@ def main():
     else:
         print(f"\nSkipping DQN: model file not found at {DQN_MODEL_PATH}")
 
-    if PPO_AVAILABLE and os.path.exists(PPO_MODEL_PATH):
+    if os.path.exists(PPO_MODEL_PATH):
         ppo_result = evaluate_ppo(graph, render=RENDER)
         print_summary(ppo_result)
         results.append(ppo_result)
@@ -181,11 +198,7 @@ def main():
         print(f"\nSkipping PPO: model file not found at {PPO_MODEL_PATH} "
               f"or sb3_contrib is not installed.")
 
-    if results:
-        print_comparison(results)
-    else:
-        print("\nNo trained models were found to evaluate.")
-
-
+    print_comparison(results)
+    
 if __name__ == "__main__":
     main()

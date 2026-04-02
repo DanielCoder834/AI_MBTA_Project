@@ -10,13 +10,9 @@ illegal edge additions/removals.
 
 After training, the model is saved for later evaluation or visualization.
 
-How to use:
 Run (creates mbta_graph.pkl, maskable_mbta_ppo.zip):
     pip install gymnasium stable-baselines3 sb3-contrib networkx matplotlib numpy
-    python network.py
-    python train.py
-    python evaluate.py
-
+    python train_ppo.py
 """
 
 import pickle
