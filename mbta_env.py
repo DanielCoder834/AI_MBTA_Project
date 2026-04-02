@@ -5,14 +5,14 @@ Actions available to the agent:
   0  ADD_EDGE    — connect any two stations with a new edge
   1  REMOVE_EDGE — remove an existing edge
 
-Reward: negative mean travel time for all commuters (start-destination pairs)
-- (maximising reward ≡ minimising average commuter travel time).
+Reward: negative mean travel time for all start-destination pairs
+- (maximising reward ≡ minimising average travel time).
 - Disconnected pairs are penalised with a large constant.
 
 Observation:
 A 1D array of 5 normalized scalar features describing current MBTA network state:
   1: normalized mean travel time [0, 1]
-     - mean commuter travel time divided by DISCONNECT_PENALTY
+     - mean travel time divided by DISCONNECT_PENALTY
   2: normalized edge count [0, 1]
      - current number of edges divided by N^2
      - how dense the network currently is
@@ -20,7 +20,7 @@ A 1D array of 5 normalized scalar features describing current MBTA network state
      - percent improvement relative to baseline network
      - (baseline_mean − current_mean) / baseline_mean
   4: reachability ratio [0, 1]
-     - fraction of commuter origin–destination pairs that remain connected
+     - fraction of origin–destination pairs that remain connected
   5: normalized mean node degree [0, 1]
      - average node degree divided by number of stations N
      - overall network connectivity level
@@ -39,19 +39,17 @@ import time
 from typing import Any 
 from matplotlib.pylab import norm
 import networkx as nx  
-from commuter_model import CommuterPopulation
 import numpy as np     
 import gymnasium as gym
 from gymnasium import spaces
 from gymnasium.utils.env_checker import check_env
 import matplotlib.pyplot as plt
-
+import math
 
 # CONSTANTS
-
 DISCONNECT_PENALTY = 500.0
 MAX_STEPS = 500
-
+DEFAULT_EDGE_WEIGHT = 3
 
 class MBTAEnv(gym.Env):
     """
@@ -66,7 +64,6 @@ class MBTAEnv(gym.Env):
     render : bool
         Whether to render the network graph after each action (slows down training).
     """
-
     # rendering modes we support
     metadata = {"render_modes": ["human"], "render_fps": 30}
 
@@ -113,9 +110,6 @@ class MBTAEnv(gym.Env):
             dtype=np.float32,
         )
 
-        # create the commuter population with the given graph and number of commuters
-        self.commuters = CommuterPopulation(base_graph)
-
     # resets env to initial state at start of new episode
     # MBTA network to original base graph, resets reward variables, recomputes baseline travel time
     def reset(self, *, seed: int | None = None, options: dict[str, Any] | None = None):
@@ -123,7 +117,6 @@ class MBTAEnv(gym.Env):
 
         # restore graph
         self._G = copy.deepcopy(self._base_graph)
-        self.commuters.update_graph(self._G)
         self._step_count = 0
 
         # build cached node positions once
@@ -194,13 +187,42 @@ class MBTAEnv(gym.Env):
         v_mask = np.ones(self.N, dtype=bool)
 
         return np.concatenate([action_type_mask, u_mask, v_mask])
+    
+    @staticmethod
+    def _haversine(lat1, lon1, lat2, lon2):
+        # Earth radius in km
+        r = 6371.0
+        # Haversine formula
+        # degrees to radians
+        dlat = math.radians(lat2 - lat1)
+        dlon = math.radians(lon2 - lon1)
+
+        # square of half the chord length 
+        a = (
+            math.sin(dlat / 2) ** 2
+            + math.cos(math.radians(lat1))
+            * math.cos(math.radians(lat2))
+            * math.sin(dlon / 2) ** 2
+        )
+        # Computes the angular distance 
+        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+        return r * c
+    
+    def _edge_weight_from_distance(self, u: str, v: str) -> float:
+        try:
+            lat1, lon1 = self._G.nodes[u]["lat"], self._G.nodes[u]["lon"]
+            lat2, lon2 = self._G.nodes[v]["lat"], self._G.nodes[v]["lon"]
+        except KeyError:
+            return DEFAULT_EDGE_WEIGHT
+        km = self._haversine(lat1, lon1, lat2, lon2)
+        return float(max(1.0, round((km / 30.0) * 60.0, 1)))
 
     # apply graph action chosen by the agent 
     def _apply_action(self, action_type: int, u: str, v: str) -> bool:
         # add edge
         if action_type == 0:
             if self._is_valid_add(u, v):
-                w = self.commuters.edge_weight_from_distance(u, v)
+                w = self._edge_weight_from_distance(u, v)
                 self._G.add_edge(u, v, travel_time_min=w, line="new")
                 return True
             return False
@@ -224,7 +246,6 @@ class MBTAEnv(gym.Env):
 
         # mutate graph for chosen action
         valid = self._apply_action(action_type, u, v)
-        self.commuters.update_graph(self._G)
         self._step_count += 1
 
         # recompute mean travel time
@@ -270,14 +291,35 @@ class MBTAEnv(gym.Env):
         plt.pause(0.001)
 
     def _mean_travel_time(self) -> float:
-        return self.commuters.get_mean_commute_time()
+        total, count = 0.0, 0
+
+        lengths = dict(
+            nx.all_pairs_dijkstra_path_length(self._G, weight="travel_time_min")
+        )
+
+        for i, u in enumerate(self.nodes):
+            for j, v in enumerate(self.nodes):
+                if i >= j:
+                    continue
+                count += 1
+                dist = lengths.get(u, {}).get(v, None)
+                total += dist if dist is not None else self.disconnect_penalty
+
+        return total / count if count > 0 else 0.0
     
     def _reachability(self) -> float:
-        reachable = 0
-        for c in self.commuters.commuters:
-            if nx.has_path(self._G, c.home_station, c.work_station):
-                reachable += 1
-        return reachable / max(len(self.commuters.commuters), 1)
+        reachable_pairs = 0
+        total_pairs = 0
+
+        for i, u in enumerate(self.nodes):
+            for j, v in enumerate(self.nodes):
+                if i >= j:
+                    continue
+                total_pairs += 1
+                if nx.has_path(self._G, u, v):
+                    reachable_pairs += 1
+
+        return reachable_pairs / total_pairs if total_pairs > 0 else 0.0
     
     def _observation(self, mean_tt: float, reachability: float) -> np.ndarray:
         norm_tt = float(np.clip(mean_tt / DISCONNECT_PENALTY, 0.0, 1.0))
