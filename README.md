@@ -29,10 +29,12 @@ mbta_env:
     5: normalized mean node degree [0, 1]
         - average node degree divided by number of stations N
         - overall network connectivity level
+    6: norm_budget
 
     Example observation:
     [ normalized_mean_travel_time,
     normalized_edge_density,
     normalized_improvement,
     reachability_ratio,
-    normalized_mean_degree ]
+    normalized_mean_degree,
+    norm_budget ]

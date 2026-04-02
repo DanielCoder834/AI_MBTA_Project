@@ -6,10 +6,10 @@ import copy
 import pickle    
 import time
 from typing import Any 
-from matplotlib.pylab import norm
+
+import gymnasium as gym
 import networkx as nx  
 import numpy as np     
-import gymnasium as gym
 from gymnasium import spaces
 from gymnasium.utils.env_checker import check_env
 import matplotlib.pyplot as plt
@@ -18,7 +18,9 @@ import math
 # CONSTANTS
 DISCONNECT_PENALTY = 500.0
 MAX_STEPS = 500
-DEFAULT_EDGE_WEIGHT = 3
+DEFAULT_EDGE_WEIGHT = 10.0
+ACTION_BUDGET = 100.0  # total budget per episode
+ACTION_COST = 1.0      # cost per action
 
 class MBTAEnv(gym.Env):
     """
@@ -28,8 +30,6 @@ class MBTAEnv(gym.Env):
         The starting MBTA network.
     max_steps : int
         Maximum steps per episode.
-    disconnect_penalty : float
-        Travel-time penalty charged per unreachable start-destination station pair.
     render : bool
         Whether to render the network graph after each action (slows down training).
     """
@@ -40,7 +40,6 @@ class MBTAEnv(gym.Env):
         self,
         base_graph: nx.Graph,
         max_steps: int = MAX_STEPS,
-        disconnect_penalty: float = DISCONNECT_PENALTY,
         render: bool = False,
     ):
         super().__init__()
@@ -48,10 +47,17 @@ class MBTAEnv(gym.Env):
         self._base_graph = base_graph
         self.nodes: list[str] = sorted(self._base_graph.nodes())
         self.N: int = len(self.nodes)
-
         self.max_steps = max_steps
-        self.disconnect_penalty = disconnect_penalty
-        self._render_enabled = render
+        
+        self.all_edges = [
+            (u, v) for i, u in enumerate(self.nodes) for v in self.nodes[i+1:]
+        ]
+        self.action_space = spaces.MultiDiscrete([2, self.N, self.N])
+        self.observation_space = spaces.Box(
+            low=np.array([0.0, 0.0, -1.0, 0.0, 0.0, 0.0], dtype=np.float32),
+            high=np.array([1.0, 1.0,  1.0, 1.0, 1.0, 1.0], dtype=np.float32),
+            dtype=np.float32,
+        )
 
         # copy of graph the agent will modify
         self._G = None
@@ -60,20 +66,7 @@ class MBTAEnv(gym.Env):
         self._baseline_mean = None
         self._step_count = 0
 
-        # [action_type, node_u, node_v]
-        self.action_space = spaces.MultiDiscrete([2, self.N, self.N])
-
-        # example observation:
-        # [ normalized_mean_travel_time,
-        #   normalized_edge_density,
-        #   normalized_improvement,
-        #   reachability_ratio,
-        #   normalized_mean_degree ]
-        self.observation_space = spaces.Box(
-            low=np.array([0.0, 0.0, -1.0, 0.0, 0.0], dtype=np.float32),
-            high=np.array([1.0, 1.0,  1.0, 1.0, 1.0], dtype=np.float32),
-            dtype=np.float32,
-        )
+        self._render_enabled = render
 
     def reset(self, *, seed: int | None = None, options: dict[str, Any] | None = None):
         """
@@ -89,12 +82,16 @@ class MBTAEnv(gym.Env):
             for n, d in self._G.nodes(data=True)
             if d.get("lon") is not None and d.get("lat") is not None
         }
-
+   
         self._baseline_mean = self._mean_travel_time()
         self._prev_mean_tt = self._baseline_mean
+
+        self._budget = ACTION_BUDGET
+
         reachability = self._reachability()
         obs = self._observation(self._baseline_mean, reachability)
         info = self._info(self._baseline_mean)
+
         return obs, info
     
     def _is_valid_add(self, u: str, v: str) -> bool:
@@ -199,18 +196,24 @@ class MBTAEnv(gym.Env):
         valid = self._apply_action(action_type, u, v)
         self._step_count += 1
 
+        # deduct budget per action
+        self._budget -= ACTION_COST
+
         mean_tt = self._mean_travel_time()
         reachability = self._reachability()
         reward = self._prev_mean_tt - mean_tt
         self._prev_mean_tt = mean_tt
 
+        if self._budget < 0:
+            reward -= abs(self._budget) * 2.0  # strong penalty for overspending
+       
         # apply penalty for invalid actions - fallback for action masking
         if not valid:
             reward -= 1.0
 
-        # no "winning" state, agent just runs until max_steps
+        # no "winning" state, agent just runs until max_steps or budgt runs out
         terminated = False
-        truncated = self._step_count >= self.max_steps
+        truncated = self._step_count >= self.max_steps or self._budget <= 0
 
         obs = self._observation(mean_tt, reachability)
         info = self._info(mean_tt)
@@ -251,7 +254,7 @@ class MBTAEnv(gym.Env):
                     continue
                 count += 1
                 dist = lengths.get(u, {}).get(v, None)
-                total += dist if dist is not None else self.disconnect_penalty
+                total += dist if dist is not None else DISCONNECT_PENALTY
 
         return total / count if count > 0 else 0.0
     
@@ -287,8 +290,10 @@ class MBTAEnv(gym.Env):
         degrees = [d for _, d in self._G.degree()]
         mean_degree = float(np.mean(degrees)) / self.N if degrees else 0.0
 
+        norm_budget = float(np.clip(self._budget / ACTION_BUDGET, 0.0, 1.0))
+
         return np.array(
-            [norm_tt, norm_edges, norm_improvement, reachability, mean_degree],
+            [norm_tt, norm_edges, norm_improvement, reachability, mean_degree, norm_budget],
             dtype=np.float32,
         )
 
