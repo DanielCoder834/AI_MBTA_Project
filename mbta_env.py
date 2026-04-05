@@ -6,19 +6,18 @@ import copy
 import pickle    
 import time
 from typing import Any 
-from matplotlib.pylab import norm
 import networkx as nx  
 import numpy as np     
 import gymnasium as gym
 from gymnasium import spaces
 from gymnasium.utils.env_checker import check_env
-import matplotlib.pyplot as plt
 import math
+import matplotlib.pyplot as plt
+
 
 # CONSTANTS
 DISCONNECT_PENALTY = 500.0
-MAX_STEPS = 500
-DEFAULT_EDGE_WEIGHT = 3
+MAX_STEPS = 50
 
 class MBTAEnv(gym.Env):
     """
@@ -35,13 +34,37 @@ class MBTAEnv(gym.Env):
     """
 
     metadata = {"render_modes": ["human"], "render_fps": 30}
+    DOWNTOWN = {
+        "place-pktrm",   # Park Street
+        "place-dwnxg",   # Downtown Crossing
+        "place-sstat",   # South Station
+        "place-north",   # North Station
+        "place-bbsta",   # Back Bay
+    }
 
+    SUBURBS = {
+        "place-brntn",   # Braintree
+        "place-asmnl",   # Alewife
+        "place-wondl",   # Wonderland
+        "place-forhl",   # Forest Hills
+        "place-ogmnl",   # Oak Grove
+        "place-bomnl",   # Bowdoin
+    }
+    TIME_PERIODS = {
+        "am_rush":   {"hours": (7, 9),   "weight_downtown": 3.0, "weight_suburb": 0.5, "weight_other": 1.0},
+        "pm_rush":   {"hours": (17, 19), "weight_downtown": 0.5, "weight_suburb": 3.0, "weight_other": 1.0},
+        "midday":    {"hours": (10, 16), "weight_downtown": 1.0, "weight_suburb": 1.0, "weight_other": 1.0},
+        "evening":   {"hours": (19, 22), "weight_downtown": 0.8, "weight_suburb": 1.2, "weight_other": 0.8},
+        "overnight": {"hours": (22, 7),  "weight_downtown": 0.2, "weight_suburb": 0.2, "weight_other": 0.2},
+
+    }
     def __init__(
         self,
         base_graph: nx.Graph,
         max_steps: int = MAX_STEPS,
         disconnect_penalty: float = DISCONNECT_PENALTY,
         render: bool = False,
+        budget: float = 500.0,
     ):
         super().__init__()
 
@@ -60,9 +83,21 @@ class MBTAEnv(gym.Env):
         self._baseline_mean = None
         self._step_count = 0
 
+
+        self._current_period = "midday"  
+
+        self._hour = 7
+
         # [action_type, node_u, node_v]
         self.num_actions = 4 * self.N * self.N
         self.action_space = spaces.Discrete(self.num_actions)
+        
+        self._cached_mask = None
+        self._graph_changed = True
+        self.budget = budget
+        self._remaining_budget = budget
+
+
 
         # example observation:
         # [ normalized_mean_travel_time,
@@ -71,8 +106,8 @@ class MBTAEnv(gym.Env):
         #   reachability_ratio,
         #   normalized_mean_degree ]
         self.observation_space = spaces.Box(
-            low=np.array([0.0, 0.0, -1.0, 0.0, 0.0], dtype=np.float32),
-            high=np.array([1.0, 1.0,  1.0, 1.0, 1.0], dtype=np.float32),
+            low=np.array( [0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32),
+            high=np.array([1.0, 1.0,  1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0], dtype=np.float32),
             dtype=np.float32,
         )
     
@@ -95,19 +130,31 @@ class MBTAEnv(gym.Env):
         super().reset(seed=seed)
         self._G = copy.deepcopy(self._base_graph)
         self._step_count = 0
-
+        self._cached_mask = None
+        self._graph_changed = True
+        self._remaining_budget = self.budget 
+        self._hour = 7
+        self._current_period = self._get_current_period()
         # build cached node positions once
         self._pos = {
             n: (d["lon"], d["lat"])
             for n, d in self._G.nodes(data=True)
             if d.get("lon") is not None and d.get("lat") is not None
         }
-
+        
+        # check edges before anything else, makes sure none of the travel times in the starting graph are missing 
+        for u, v, data in self._G.edges(data=True):
+            if "travel_time_min" not in data:
+                raise ValueError(f"Missing travel_time_min on edge {u}-{v} in base graph")
         self._baseline_mean = self._mean_travel_time()
         self._prev_mean_tt = self._baseline_mean
         reachability = self._reachability()
+
+
+
         obs = self._observation(self._baseline_mean, reachability)
         info = self._info(self._baseline_mean)
+
         return obs, info
     
     def _is_valid_add(self, u: str, v: str) -> bool:
@@ -132,6 +179,8 @@ class MBTAEnv(gym.Env):
         return False
 
     def action_masks(self) -> np.ndarray:
+        if not self._graph_changed and self._cached_mask is not None:
+            return self._cached_mask
         mask = np.zeros(self.num_actions, dtype=bool)
 
         for action_type in range(4):
@@ -139,9 +188,9 @@ class MBTAEnv(gym.Env):
                 for v_idx, v in enumerate(self.nodes):
                     a = self.encode_action(action_type, u_idx, v_idx)
                     mask[a] = self._is_valid_action(action_type, u, v)
-
+        self._cached_mask = mask
+        self._graph_changed = False
         return mask
-
     @staticmethod
     def _haversine(lat1, lon1, lat2, lon2):
         """Calculate the great circle distance in kilometers between two points on the Earth."""
@@ -166,7 +215,7 @@ class MBTAEnv(gym.Env):
             lat1, lon1 = self._G.nodes[u]["lat"], self._G.nodes[u]["lon"]
             lat2, lon2 = self._G.nodes[v]["lat"], self._G.nodes[v]["lon"]
         except KeyError:
-            return DEFAULT_EDGE_WEIGHT
+            raise ValueError(f"Missing coordinates for {u} or {v}")
         km = self._haversine(lat1, lon1, lat2, lon2)
         return float(max(1.0, round((km / 30.0) * 60.0, 1)))
 
@@ -177,14 +226,22 @@ class MBTAEnv(gym.Env):
         if action_type == 0:
             if self._is_valid_add(u, v):
                 w = self._edge_weight_from_distance(u, v)
+                cost = w * 2.0 
+                if self._remaining_budget < cost:
+                    return False 
                 self._G.add_edge(u, v, travel_time_min=w, line="new")
+                self._graph_changed = True  
                 return True
             return False
 
         # remove edge
         if action_type == 1:
             if self._is_valid_remove(u, v):
+                edge_data = self._G.get_edge_data(u, v)
+                refund = edge_data.get("travel_time_min", 0) * 1.0
                 self._G.remove_edge(u, v)
+                self._remaining_budget += refund
+                self._graph_changed = True
                 return True
             return False
 
@@ -240,6 +297,10 @@ class MBTAEnv(gym.Env):
         valid = self._apply_action(action_type, u, v)
         self._step_count += 1
 
+        self._hour = (self._hour + 0.5) % 24
+        self._current_period = self._get_current_period()
+        
+        
         mean_tt = self._mean_travel_time()
         reachability = self._reachability()
         reward = self._prev_mean_tt - mean_tt
@@ -282,7 +343,12 @@ class MBTAEnv(gym.Env):
 
     def _mean_travel_time(self) -> float:
         """ calculates the average travel time in minutes across all pairs of stations, applying a penalty for unreachable pairs. """
-        total, count = 0.0, 0
+        period = self.TIME_PERIODS[self._current_period]
+        downtown = self.DOWNTOWN
+        total, count = 0.0, 0.0
+        # per-line tracking
+        line_totals = {"red": 0.0, "orange": 0.0, "blue": 0.0, "green": 0.0, "new": 0.0}
+        line_counts = {"red": 0.0, "orange": 0.0, "blue": 0.0, "green": 0.0, "new": 0.0}
 
         lengths = dict(
             nx.all_pairs_dijkstra_path_length(self._G, weight="travel_time_min")
@@ -292,9 +358,49 @@ class MBTAEnv(gym.Env):
             for j, v in enumerate(self.nodes):
                 if i >= j:
                     continue
-                count += 1
+                
+                u_downtown = u in downtown
+                v_downtown = v in downtown
+                u_suburb   = u in self.SUBURBS
+                v_suburb   = v in self.SUBURBS
+
+                
+                if self._current_period == "am_rush":
+                    if u_suburb and v_downtown:
+                        w = period["weight_downtown"]
+                    elif u_downtown and v_suburb:
+                        w = period["weight_suburb"]
+                    else:
+                        w = period["weight_other"]
+                elif self._current_period == "pm_rush":
+                    if u_downtown and v_suburb:
+                        w = period["weight_suburb"]
+                    elif u_suburb and v_downtown:
+                        w = period["weight_downtown"]
+                    else:
+                        w = period["weight_other"]
+                else:
+                    w = period["weight_other"]
+
                 dist = lengths.get(u, {}).get(v, None)
-                total += dist if dist is not None else self.disconnect_penalty
+                travel_time = dist if dist is not None else self.disconnect_penalty
+                total += w * travel_time
+                count += w
+                
+                # track per-line using edge data
+                edge_data = self._G.get_edge_data(u, v)
+                if edge_data:
+                    line = edge_data.get("line", "other")
+                    if line in line_totals:
+                        line_totals[line] += travel_time
+                        line_counts[line] += 1.0
+        
+        # store per-line means as instance variable for _observation() to use
+        self._per_line_mean_tt = {
+            line: line_totals[line] / line_counts[line]
+            if line_counts[line] > 0 else 0.0
+            for line in line_totals
+        }
 
         return total / count if count > 0 else 0.0
     
@@ -329,9 +435,19 @@ class MBTAEnv(gym.Env):
 
         degrees = [d for _, d in self._G.degree()]
         mean_degree = float(np.mean(degrees)) / self.N if degrees else 0.0
+        
+        # per-line normalized mean travel times
+        per_line = getattr(self, "_per_line_mean_tt", {})
+        norm_red    = float(np.clip(per_line.get("red",    0) / DISCONNECT_PENALTY, 0.0, 1.0))
+        norm_orange = float(np.clip(per_line.get("orange", 0) / DISCONNECT_PENALTY, 0.0, 1.0))
+        norm_blue   = float(np.clip(per_line.get("blue",   0) / DISCONNECT_PENALTY, 0.0, 1.0))
+        norm_green  = float(np.clip(per_line.get("green",  0) / DISCONNECT_PENALTY, 0.0, 1.0))
+        norm_budget = float(np.clip(self._remaining_budget / self.budget, 0.0, 1.0))
+
 
         return np.array(
-            [norm_tt, norm_edges, norm_improvement, reachability, mean_degree],
+        [norm_tt, norm_edges, norm_improvement, reachability, mean_degree, norm_red, norm_orange, norm_blue, norm_green, norm_budget],
+
             dtype=np.float32,
         )
 
@@ -351,13 +467,26 @@ class MBTAEnv(gym.Env):
             "improvement_pct":      improvement,
             "n_edges":              self._G.number_of_edges(),
             "step":                 self._step_count,
+            "current_period":       self._current_period,
+            "remaining_budget":     self._remaining_budget,
+
+
         }
 
     def close(self):
         if hasattr(self, "_fig"):
             plt.close(self._fig)
-
-
+            
+    def _get_current_period(self) -> str:
+        for name, config in self.TIME_PERIODS.items():
+            start, end = config["hours"]
+            if start < end:
+                if start <= self._hour < end:
+                    return name
+            else:  # overnight wraps midnight
+                if self._hour >= start or self._hour < end:
+                    return name
+        return "midday"
 if __name__ == "__main__":
     """Loads the graph, runs the gymnasium env_checker."""
 
@@ -371,9 +500,13 @@ if __name__ == "__main__":
     print("check_env passed.\n")
 
     obs, info = env.reset()
-    print(f"Baseline mean travel time : {info['mean_travel_time_min']:.2f} min")
+    print(f"Baseline mean travel time : {info['mean_travel_time_min']} min")
     print(f"Observation shape         : {obs.shape}")
     print(f"Action space              : {env.action_space}\n")
+    print(f"Per-line mean TT          : {env._per_line_mean_tt}")
+    print(f"Starting budget: {info['remaining_budget']}")
+    print(f"Observation values: {obs}")
+    print(f"budget={info['remaining_budget']}")
 
     # run 50 completely random actions and track total reward
     total_reward = 0.0
@@ -397,5 +530,3 @@ if __name__ == "__main__":
 
         if terminated or truncated:
             break
-
-    print(f"\nTotal reward over episode : {total_reward:.2f}")
