@@ -50,7 +50,7 @@ with open("mbta_data/mbta_graph.pkl", "rb") as f:
 env = MBTAEnv(G, max_steps=MAX_STEPS, render=False)
 
 model = MaskablePPO("MlpPolicy", env, verbose=1)
-model.learn(total_timesteps=10000, callback=TrainingCallback(print_freq=100))
+model.learn(total_timesteps=5, callback=TrainingCallback(print_freq=100))
 
 # save trained model
 model.save("maskable_mbta_ppo")

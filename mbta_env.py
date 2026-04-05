@@ -238,7 +238,8 @@ class MBTAEnv(gym.Env):
         if action_type == 1:
             if self._is_valid_remove(u, v):
                 edge_data = self._G.get_edge_data(u, v)
-                r * .5
+                refund = edge_data.get("travel_time_min", 0) * 0.5
+                self._remaining_budget += refund
                 self._G.remove_edge(u, v)
                 self._remaining_budget += refund
                 self._graph_changed = True
