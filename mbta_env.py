@@ -89,7 +89,7 @@ class MBTAEnv(gym.Env):
         self._hour = 7
 
         # [action_type, node_u, node_v]
-        self.num_actions = 2 * self.N * self.N
+        self.num_actions = 4 * self.N * self.N
         self.action_space = spaces.Discrete(self.num_actions)
         
         self._cached_mask = None
@@ -174,13 +174,16 @@ class MBTAEnv(gym.Env):
             return self._is_valid_add(u, v)
         if action_type == 1:
             return self._is_valid_remove(u, v)
+        if action_type == 2 or action_type == 3: 
+            return True 
         return False
 
     def action_masks(self) -> np.ndarray:
         if not self._graph_changed and self._cached_mask is not None:
             return self._cached_mask
         mask = np.zeros(self.num_actions, dtype=bool)
-        for action_type in range(2):
+
+        for action_type in range(4):
             for u_idx, u in enumerate(self.nodes):
                 for v_idx, v in enumerate(self.nodes):
                     a = self.encode_action(action_type, u_idx, v_idx)
@@ -217,6 +220,7 @@ class MBTAEnv(gym.Env):
         return float(max(1.0, round((km / 30.0) * 60.0, 1)))
 
     def _apply_action(self, action_type: int, u: str, v: str) -> bool:
+
         """ applies the proposed action to the graph if valid, returns whether the action was valid """
         # add edge
         if action_type == 0:
@@ -238,6 +242,45 @@ class MBTAEnv(gym.Env):
                 self._G.remove_edge(u, v)
                 self._remaining_budget += refund
                 self._graph_changed = True
+                return True
+            return False
+
+        # Increase Frequency 
+        if action_type == 2:
+            if self._G.has_edge(u, v):
+                # The .get already does the initialization 
+                old_freq = self._G[u][v].get("frequency", 1.0)
+                new_freq = max(0.5, old_freq / 2)  # already at 0.5, skip
+                # Check if the new frequency is around 0.5
+                # (since it is a decimal number, comparisons between other numbers become weird) 
+                if np.isclose(new_freq, 0.5, rtol=1e-09, atol=1e-09):
+                    return False
+                self._G[u][v]["frequency"] = new_freq
+                
+                old_travel_time_min = self._G[u][v]["travel_time_min"]
+                self._G[u][v]["travel_time_min"] *= self._G[u][v]["frequency"]
+                # Making sure the change is realistic 
+                self._G[u][v]["travel_time_min"] = max(self._G[u][v]["travel_time_min"], old_travel_time_min * 2)
+                self._G[u][v]["travel_time_min"] = min(self._G[u][v]["travel_time_min"], old_travel_time_min / 2)
+                return True
+            return False
+        
+        # Decrease Frequency
+        if action_type == 3: 
+            if self._G.has_edge(u, v):
+                # The .get already does the initialization 
+                old_freq = self._G[u][v].get("frequency", 1.0)
+                new_freq = max(2.0, old_freq * 2)  # already at 2.0, skip
+                # Check if the new frequency is around 2.0 
+                if np.isclose(new_freq, 2.0, rtol=1e-09, atol=1e-09):
+                    return False
+                self._G[u][v]["frequency"] = new_freq
+                
+                old_travel_time_min = self._G[u][v]["travel_time_min"]
+                self._G[u][v]["travel_time_min"] *= self._G[u][v]["frequency"]
+                # Making sure the change is realistic 
+                self._G[u][v]["travel_time_min"] = max(self._G[u][v]["travel_time_min"], old_travel_time_min * 2)
+                self._G[u][v]["travel_time_min"] = min(self._G[u][v]["travel_time_min"], old_travel_time_min / 2)
                 return True
             return False
 
