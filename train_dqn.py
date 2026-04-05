@@ -16,8 +16,10 @@ import numpy as np
 from mbta_env import MBTAEnv
 from dqn_agent import DQNAgent
 
-NUM_EPISODES = 10
+NUM_EPISODES = 200
 MAX_STEPS = 50
+
+# DQN steps = NUM_EPISODES × MAX_STEPS, 10 × 50 = 500 steps.
 
 # load base MBTA graph
 with open("mbta_data/mbta_graph.pkl", "rb") as f:
@@ -52,8 +54,11 @@ for episode in range(NUM_EPISODES):
     done = False
     total_reward = 0.0
     losses = []
+    total_steps = 0
+
 
     while not done:
+        total_steps += 1
         # get valid action mask from env
         valid_mask = env.action_masks()
         # choose action

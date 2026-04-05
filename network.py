@@ -73,6 +73,9 @@ def build_graph():
 
     for src, dst, travel_time, color in edges_raw:
         G.add_edge(src, dst, line=color, travel_time_min=travel_time)
+        
+    
+
     return G
 def draw_graph(G):
     # node positions for plotting
