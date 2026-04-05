@@ -248,6 +248,10 @@ class MBTAEnv(gym.Env):
         # Increase Frequency 
         if action_type == 2:
             if self._G.has_edge(u, v):
+                w = self._edge_weight_from_distance(u, v)
+                cost = w * 2.0 
+                if self._remaining_budget < cost:
+                    return False 
                 # The .get already does the initialization 
                 old_freq = self._G[u][v].get("frequency", 1.0)
                 new_freq = max(0.5, old_freq / 2)  # already at 0.5, skip
@@ -268,6 +272,9 @@ class MBTAEnv(gym.Env):
         # Decrease Frequency
         if action_type == 3: 
             if self._G.has_edge(u, v):
+                edge_data = self._G.get_edge_data(u, v)
+                refund = edge_data.get("travel_time_min", 1)
+                self._remaining_budget += refund
                 # The .get already does the initialization 
                 old_freq = self._G[u][v].get("frequency", 1.0)
                 new_freq = max(2.0, old_freq * 2)  # already at 2.0, skip

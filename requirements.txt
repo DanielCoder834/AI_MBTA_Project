@@ -1,0 +1,6 @@
+gymnasium 
+stable-baselines3 
+sb3-contrib 
+networkx 
+matplotlib 
+numpy
