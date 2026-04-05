@@ -175,7 +175,7 @@ class MBTAEnv(gym.Env):
         if action_type == 1:
             return self._is_valid_remove(u, v)
         if action_type == 2 or action_type == 3: 
-            return True 
+            return self._G.has_edge(u, v) 
         return False
 
     def action_masks(self) -> np.ndarray:
@@ -230,6 +230,7 @@ class MBTAEnv(gym.Env):
                 if self._remaining_budget < cost:
                     return False 
                 self._G.add_edge(u, v, travel_time_min=w, line="new")
+                self._remaining_budget -= cost
                 self._graph_changed = True  
                 return True
             return False
@@ -239,7 +240,6 @@ class MBTAEnv(gym.Env):
             if self._is_valid_remove(u, v):
                 edge_data = self._G.get_edge_data(u, v)
                 refund = edge_data.get("travel_time_min", 0) * 0.5
-                self._remaining_budget += refund
                 self._G.remove_edge(u, v)
                 self._remaining_budget += refund
                 self._graph_changed = True
@@ -262,33 +262,39 @@ class MBTAEnv(gym.Env):
                     return False
                 self._G[u][v]["frequency"] = new_freq
                 
-                old_travel_time_min = self._G[u][v]["travel_time_min"]
-                self._G[u][v]["travel_time_min"] *= self._G[u][v]["frequency"]
-                # Making sure the change is realistic 
-                self._G[u][v]["travel_time_min"] = max(self._G[u][v]["travel_time_min"], old_travel_time_min * 2)
-                self._G[u][v]["travel_time_min"] = min(self._G[u][v]["travel_time_min"], old_travel_time_min / 2)
+                # old_travel_time_min = self._G[u][v]["travel_time_min"]
+                # self._G[u][v]["travel_time_min"] *= self._G[u][v]["frequency"]
+                # # Making sure the change is realistic 
+                # self._G[u][v]["travel_time_min"] = max(self._G[u][v]["travel_time_min"], old_travel_time_min * 2)
+                # self._G[u][v]["travel_time_min"] = min(self._G[u][v]["travel_time_min"], old_travel_time_min / 2)
+                self._G[u][v]["travel_time_min"] *= 0.9
+                self._graph_changed = True
+                self._remaining_budget -= cost
                 return True
             return False
         
         # Decrease Frequency
         if action_type == 3: 
             if self._G.has_edge(u, v):
-                edge_data = self._G.get_edge_data(u, v)
-                refund = edge_data.get("travel_time_min", 1)
-                self._remaining_budget += refund
-                # The .get already does the initialization 
                 old_freq = self._G[u][v].get("frequency", 1.0)
                 new_freq = max(2.0, old_freq * 2)  # already at 2.0, skip
                 # Check if the new frequency is around 2.0 
                 if np.isclose(new_freq, 2.0, rtol=1e-09, atol=1e-09):
                     return False
+                edge_data = self._G.get_edge_data(u, v)
+                refund = edge_data.get("travel_time_min", 1)
+                self._remaining_budget += refund
+                # The .get already does the initialization 
+               
                 self._G[u][v]["frequency"] = new_freq
                 
-                old_travel_time_min = self._G[u][v]["travel_time_min"]
-                self._G[u][v]["travel_time_min"] *= self._G[u][v]["frequency"]
-                # Making sure the change is realistic 
-                self._G[u][v]["travel_time_min"] = max(self._G[u][v]["travel_time_min"], old_travel_time_min * 2)
-                self._G[u][v]["travel_time_min"] = min(self._G[u][v]["travel_time_min"], old_travel_time_min / 2)
+                # old_travel_time_min = self._G[u][v]["travel_time_min"]
+                # self._G[u][v]["travel_time_min"] *= self._G[u][v]["frequency"]
+                # # Making sure the change is realistic 
+                # self._G[u][v]["travel_time_min"] = max(self._G[u][v]["travel_time_min"], old_travel_time_min * 2)
+                # self._G[u][v]["travel_time_min"] = min(self._G[u][v]["travel_time_min"], old_travel_time_min / 2)
+                self._G[u][v]["travel_time_min"] *= 1.1
+                self._graph_changed = True
                 return True
             return False
 

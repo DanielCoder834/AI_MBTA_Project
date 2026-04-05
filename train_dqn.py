@@ -9,14 +9,18 @@ edges to minimize average commuter travel time.
 Run (creates dqn_mbta.pt with trained Q-network weights):
 python train_dqn.py
 """
-
+import matplotlib.pyplot as plt
 import pickle
 import numpy as np
 
 from mbta_env import MBTAEnv
 from dqn_agent import DQNAgent
 
-NUM_EPISODES = 200
+# CHANGE
+NUM_EPISODES   = 41
+EPSILON_DECAY  = 0.99
+
+# DONT CHANGE
 MAX_STEPS = 50
 
 # load base MBTA graph
@@ -38,7 +42,7 @@ agent = DQNAgent(
     gamma=0.99,
     epsilon_start=1.0,
     epsilon_end=0.05,
-    epsilon_decay=0.98,
+    epsilon_decay=EPSILON_DECAY,
     buffer_capacity=5000,
     batch_size=64,
     target_update_freq=50,
@@ -93,3 +97,15 @@ for episode in range(NUM_EPISODES):
 agent.save("dqn_mbta.pt")
 
 env.close()
+
+
+plt.figure(figsize=(10, 5))
+plt.plot(episode_rewards, color="#378ADD", linewidth=1.5)
+plt.title("DQN — reward per episode")
+plt.xlabel("Episode")
+plt.ylabel("Total reward")
+plt.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.savefig("dqn_training_curve.png", dpi=150)
+plt.show()
+print("Chart saved to dqn_training_curve.png")

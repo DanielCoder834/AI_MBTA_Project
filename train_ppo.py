@@ -21,12 +21,17 @@ from mbta_env import MBTAEnv
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.maskable.utils import get_action_masks
 from stable_baselines3.common.callbacks import BaseCallback
+
+# CHANGE 
+TOTAL_TIMESTEPS = 2048
+# DONT CHANGE
 MAX_STEPS = 50
 
 class TrainingCallback(BaseCallback):
     def __init__(self, print_freq=10):
         super().__init__()
         self.print_freq = print_freq
+        self.episode_rewars
 
     def _on_step(self) -> bool:
         if self.n_calls % self.print_freq == 0:
@@ -50,10 +55,23 @@ with open("mbta_data/mbta_graph.pkl", "rb") as f:
 env = MBTAEnv(G, max_steps=MAX_STEPS, render=False)
 
 model = MaskablePPO("MlpPolicy", env, verbose=1)
-model.learn(total_timesteps=5, callback=TrainingCallback(print_freq=100))
+callback = TrainingCallback(print_freq=100)
+model.learn(total_timesteps=TOTAL_TIMESTEPS, callback=callback)
 
 # save trained model
 model.save("maskable_mbta_ppo")
 env.close()
 
 print("Training complete. Model saved to maskable_mbta_ppo.zip")
+
+import matplotlib.pyplot as plt
+plt.figure(figsize=(10, 5))
+plt.plot(callback.episode_rewards, color="#1D9E75", linewidth=1.5)
+plt.title("PPO — reward per episode")
+plt.xlabel("Episode")
+plt.ylabel("Total reward")
+plt.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.savefig("ppo_training_curve.png", dpi=150)
+plt.show()
+print("Chart saved to ppo_training_curve.png")

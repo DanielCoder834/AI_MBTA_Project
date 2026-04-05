@@ -30,6 +30,7 @@ GRAPH_PATH = "mbta_data/mbta_graph.pkl"
 DQN_MODEL_PATH = "dqn_mbta.pt"
 PPO_MODEL_PATH = "maskable_mbta_ppo.zip"
 
+# DONT CHANGE
 MAX_STEPS = 50
 RENDER = True
 
