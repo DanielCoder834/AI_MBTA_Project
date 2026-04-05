@@ -6,7 +6,6 @@ import copy
 import pickle    
 import time
 from typing import Any 
-from matplotlib.pylab import norm
 import networkx as nx  
 import numpy as np     
 import gymnasium as gym
@@ -105,8 +104,8 @@ class MBTAEnv(gym.Env):
         #   reachability_ratio,
         #   normalized_mean_degree ]
         self.observation_space = spaces.Box(
-            low=np.array([0.0, 0.0, -1.0, 0.0, 0.0], dtype=np.float32),
-            high=np.array([1.0, 1.0,  1.0, 1.0, 1.0], dtype=np.float32),
+            low=np.array( [0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32),
+            high=np.array([1.0, 1.0,  1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0], dtype=np.float32),
             dtype=np.float32,
         )
     
@@ -290,6 +289,9 @@ class MBTAEnv(gym.Env):
         period = self.TIME_PERIODS[self._current_period]
         downtown = self.DOWNTOWN
         total, count = 0.0, 0.0
+        # per-line tracking
+        line_totals = {"red": 0.0, "orange": 0.0, "blue": 0.0, "green": 0.0, "new": 0.0}
+        line_counts = {"red": 0.0, "orange": 0.0, "blue": 0.0, "green": 0.0, "new": 0.0}
 
         lengths = dict(
             nx.all_pairs_dijkstra_path_length(self._G, weight="travel_time_min")
@@ -327,6 +329,21 @@ class MBTAEnv(gym.Env):
                 travel_time = dist if dist is not None else self.disconnect_penalty
                 total += w * travel_time
                 count += w
+                
+                # track per-line using edge data
+                edge_data = self._G.get_edge_data(u, v)
+                if edge_data:
+                    line = edge_data.get("line", "other")
+                    if line in line_totals:
+                        line_totals[line] += travel_time
+                        line_counts[line] += 1.0
+        
+        # store per-line means as instance variable for _observation() to use
+        self._per_line_mean_tt = {
+            line: line_totals[line] / line_counts[line]
+            if line_counts[line] > 0 else 0.0
+            for line in line_totals
+        }
 
         return total / count if count > 0 else 0.0
     
@@ -361,9 +378,17 @@ class MBTAEnv(gym.Env):
 
         degrees = [d for _, d in self._G.degree()]
         mean_degree = float(np.mean(degrees)) / self.N if degrees else 0.0
+        
+        # per-line normalized mean travel times
+        per_line = getattr(self, "_per_line_mean_tt", {})
+        norm_red    = float(np.clip(per_line.get("red",    0) / DISCONNECT_PENALTY, 0.0, 1.0))
+        norm_orange = float(np.clip(per_line.get("orange", 0) / DISCONNECT_PENALTY, 0.0, 1.0))
+        norm_blue   = float(np.clip(per_line.get("blue",   0) / DISCONNECT_PENALTY, 0.0, 1.0))
+        norm_green  = float(np.clip(per_line.get("green",  0) / DISCONNECT_PENALTY, 0.0, 1.0))
 
         return np.array(
-        [norm_tt, norm_edges, norm_improvement, reachability, mean_degree],
+        [norm_tt, norm_edges, norm_improvement, reachability, mean_degree, norm_red, norm_orange, norm_blue, norm_green],
+
             dtype=np.float32,
         )
 
@@ -417,6 +442,7 @@ if __name__ == "__main__":
     print(f"Baseline mean travel time : {info['mean_travel_time_min']:.2f} min")
     print(f"Observation shape         : {obs.shape}")
     print(f"Action space              : {env.action_space}\n")
+    print(f"Per-line mean TT          : {env._per_line_mean_tt}")
 
     # run 50 completely random actions and track total reward
     total_reward = 0.0

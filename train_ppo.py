@@ -21,6 +21,7 @@ from mbta_env import MBTAEnv
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.maskable.utils import get_action_masks
 from stable_baselines3.common.callbacks import BaseCallback
+MAX_STEPS = 50
 
 class TrainingCallback(BaseCallback):
     def __init__(self, print_freq=10):
@@ -46,7 +47,7 @@ with open("mbta_data/mbta_graph.pkl", "rb") as f:
 
 # initialize environment
 # change render=True to watch it train
-env = MBTAEnv(G, render=False)
+env = MBTAEnv(G, max_steps=MAX_STEPS, render=False)
 
 # train MaskablePPO agent with action masking
 model = MaskablePPO(
