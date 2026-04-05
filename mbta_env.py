@@ -18,7 +18,6 @@ import matplotlib.pyplot as plt
 # CONSTANTS
 DISCONNECT_PENALTY = 500.0
 MAX_STEPS = 50
-DEFAULT_EDGE_WEIGHT = 3
 
 class MBTAEnv(gym.Env):
     """
@@ -138,15 +137,20 @@ class MBTAEnv(gym.Env):
             for n, d in self._G.nodes(data=True)
             if d.get("lon") is not None and d.get("lat") is not None
         }
-
+        
+        # check edges before anything else, makes sure none of the travel times in the starting graph are missing 
+        for u, v, data in self._G.edges(data=True):
+            if "travel_time_min" not in data:
+                raise ValueError(f"Missing travel_time_min on edge {u}-{v} in base graph")
         self._baseline_mean = self._mean_travel_time()
         self._prev_mean_tt = self._baseline_mean
         reachability = self._reachability()
-        
+
 
 
         obs = self._observation(self._baseline_mean, reachability)
         info = self._info(self._baseline_mean)
+
         return obs, info
     
     def _is_valid_add(self, u: str, v: str) -> bool:
@@ -204,7 +208,7 @@ class MBTAEnv(gym.Env):
             lat1, lon1 = self._G.nodes[u]["lat"], self._G.nodes[u]["lon"]
             lat2, lon2 = self._G.nodes[v]["lat"], self._G.nodes[v]["lon"]
         except KeyError:
-            return DEFAULT_EDGE_WEIGHT
+            raise ValueError(f"Missing coordinates for {u} or {v}")
         km = self._haversine(lat1, lon1, lat2, lon2)
         return float(max(1.0, round((km / 30.0) * 60.0, 1)))
 
