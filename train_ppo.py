@@ -49,17 +49,8 @@ with open("mbta_data/mbta_graph.pkl", "rb") as f:
 # change render=True to watch it train
 env = MBTAEnv(G, max_steps=MAX_STEPS, render=False)
 
-# train MaskablePPO agent with action masking
-model = MaskablePPO(
-    "MlpPolicy",
-    env,
-    verbose=1,
-    n_steps=2048,
-    batch_size=64,
-    n_epochs=5,
-    learning_rate=3e-4,
-)
-model.learn(total_timesteps=10000, log_interval=1, callback=TrainingCallback(print_freq=100))
+model = MaskablePPO("MlpPolicy", env, verbose=1)
+model.learn(total_timesteps=10000, callback=TrainingCallback(print_freq=100))
 
 # save trained model
 model.save("maskable_mbta_ppo")
