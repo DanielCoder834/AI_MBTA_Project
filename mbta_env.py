@@ -64,6 +64,7 @@ class MBTAEnv(gym.Env):
         max_steps: int = MAX_STEPS,
         disconnect_penalty: float = DISCONNECT_PENALTY,
         render: bool = False,
+        budget: float = 500.0,
     ):
         super().__init__()
 
@@ -93,6 +94,8 @@ class MBTAEnv(gym.Env):
         
         self._cached_mask = None
         self._graph_changed = True
+        self.budget = budget
+        self._remaining_budget = budget
 
 
 
@@ -103,8 +106,8 @@ class MBTAEnv(gym.Env):
         #   reachability_ratio,
         #   normalized_mean_degree ]
         self.observation_space = spaces.Box(
-            low=np.array( [0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32),
-            high=np.array([1.0, 1.0,  1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0], dtype=np.float32),
+            low=np.array( [0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32),
+            high=np.array([1.0, 1.0,  1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0], dtype=np.float32),
             dtype=np.float32,
         )
     
@@ -129,6 +132,7 @@ class MBTAEnv(gym.Env):
         self._step_count = 0
         self._cached_mask = None
         self._graph_changed = True
+        self._remaining_budget = self.budget 
         self._hour = 7
         self._current_period = self._get_current_period()
         # build cached node positions once
@@ -218,6 +222,9 @@ class MBTAEnv(gym.Env):
         if action_type == 0:
             if self._is_valid_add(u, v):
                 w = self._edge_weight_from_distance(u, v)
+                cost = w * 2.0 
+                if self._remaining_budget < cost:
+                    return False 
                 self._G.add_edge(u, v, travel_time_min=w, line="new")
                 self._graph_changed = True  
                 return True
@@ -226,7 +233,10 @@ class MBTAEnv(gym.Env):
         # remove edge
         if action_type == 1:
             if self._is_valid_remove(u, v):
+                edge_data = self._G.get_edge_data(u, v)
+                refund = edge_data.get("travel_time_min", 0) * 1.0
                 self._G.remove_edge(u, v)
+                self._remaining_budget += refund
                 self._graph_changed = True
                 return True
             return False
@@ -389,9 +399,11 @@ class MBTAEnv(gym.Env):
         norm_orange = float(np.clip(per_line.get("orange", 0) / DISCONNECT_PENALTY, 0.0, 1.0))
         norm_blue   = float(np.clip(per_line.get("blue",   0) / DISCONNECT_PENALTY, 0.0, 1.0))
         norm_green  = float(np.clip(per_line.get("green",  0) / DISCONNECT_PENALTY, 0.0, 1.0))
+        norm_budget = float(np.clip(self._remaining_budget / self.budget, 0.0, 1.0))
+
 
         return np.array(
-        [norm_tt, norm_edges, norm_improvement, reachability, mean_degree, norm_red, norm_orange, norm_blue, norm_green],
+        [norm_tt, norm_edges, norm_improvement, reachability, mean_degree, norm_red, norm_orange, norm_blue, norm_green, norm_budget],
 
             dtype=np.float32,
         )
@@ -413,6 +425,8 @@ class MBTAEnv(gym.Env):
             "n_edges":              self._G.number_of_edges(),
             "step":                 self._step_count,
             "current_period":       self._current_period,
+            "remaining_budget":     self._remaining_budget,
+
 
         }
 
@@ -443,10 +457,13 @@ if __name__ == "__main__":
     print("check_env passed.\n")
 
     obs, info = env.reset()
-    print(f"Baseline mean travel time : {info['mean_travel_time_min']:.2f} min")
+    print(f"Baseline mean travel time : {info['mean_travel_time_min']} min")
     print(f"Observation shape         : {obs.shape}")
     print(f"Action space              : {env.action_space}\n")
     print(f"Per-line mean TT          : {env._per_line_mean_tt}")
+    print(f"Starting budget: {info['remaining_budget']}")
+    print(f"Observation values: {obs}")
+    print(f"budget={info['remaining_budget']}")
 
     # run 50 completely random actions and track total reward
     total_reward = 0.0
