@@ -16,7 +16,7 @@ import numpy as np
 from mbta_env import MBTAEnv
 from dqn_agent import DQNAgent
 
-NUM_EPISODES = 10
+NUM_EPISODES = 200
 MAX_STEPS = 50
 
 # load base MBTA graph
@@ -45,6 +45,8 @@ agent = DQNAgent(
 )
 
 episode_rewards = []
+total_steps = 0
+
 
 # training for loop
 for episode in range(NUM_EPISODES):
@@ -54,6 +56,7 @@ for episode in range(NUM_EPISODES):
     losses = []
 
     while not done:
+        total_steps += 1
         # get valid action mask from env
         valid_mask = env.action_masks()
         # choose action
@@ -79,6 +82,7 @@ for episode in range(NUM_EPISODES):
 
     print(
         f"Episode {episode+1:3d} | "
+        f"Total steps: {total_steps:6d} | "
         f"Reward: {total_reward:8.2f} | "
         f"Epsilon: {agent.epsilon:.3f} | "
         f"Mean TT: {info['mean_travel_time_min']:.2f} | "
