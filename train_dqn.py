@@ -16,7 +16,7 @@ import numpy as np
 from mbta_env import MBTAEnv
 from dqn_agent import DQNAgent
 
-NUM_EPISODES = 10
+NUM_EPISODES = 200
 MAX_STEPS = 50
 
 # load base MBTA graph
