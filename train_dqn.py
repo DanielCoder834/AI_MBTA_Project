@@ -17,7 +17,7 @@ from mbta_env import MBTAEnv
 from dqn_agent import DQNAgent
 
 # CHANGE
-NUM_EPISODES   = 41
+NUM_EPISODES   = 205
 EPSILON_DECAY  = 0.99
 
 # DONT CHANGE
@@ -28,7 +28,7 @@ with open("mbta_data/mbta_graph.pkl", "rb") as f:
     G = pickle.load(f)
 
 # create environment
-env = MBTAEnv(G, max_steps=MAX_STEPS, render=False)
+env = MBTAEnv(G, max_steps=MAX_STEPS, render=False, budget=5000.0)
 
 # get observation/action sizes
 state_dim = env.observation_space.shape[0]

@@ -38,7 +38,7 @@ RENDER = True
 def evaluate_dqn(graph, render=False):
     """Evaluate implemented DQN agent for one episode."""
     # initialize env
-    env = MBTAEnv(graph, max_steps=MAX_STEPS, render=render)
+    env = MBTAEnv(graph, max_steps=MAX_STEPS, render=render, budget=5000.0)
 
     state_dim = env.observation_space.shape[0]
     action_dim = env.action_space.n
@@ -86,7 +86,7 @@ def evaluate_dqn(graph, render=False):
 def evaluate_ppo(graph, render=False):
     """Evaluate imported MaskablePPO agent for one episode."""
     # initialize env
-    env = MBTAEnv(graph, max_steps=MAX_STEPS, render=render)
+    env = MBTAEnv(graph, max_steps=MAX_STEPS, render=render,  budget=5000.0)
     # load trained PPO policy
     model = MaskablePPO.load(PPO_MODEL_PATH)
 
