@@ -17,7 +17,7 @@ from mbta_env import MBTAEnv
 from dqn_agent import DQNAgent
 
 # CHANGE
-NUM_EPISODES   = 205
+NUM_EPISODES   = 615
 EPSILON_DECAY  = 0.99
 
 # DONT CHANGE
@@ -49,6 +49,7 @@ agent = DQNAgent(
 )
 
 episode_rewards = []
+episode_mean_tts = []
 total_steps = 0
 
 
@@ -81,6 +82,8 @@ for episode in range(NUM_EPISODES):
     # reduce exploration overt time
     agent.decay_epsilon()
     episode_rewards.append(total_reward)
+    episode_mean_tts.append(info['mean_travel_time_min'])
+
 
     mean_loss = np.mean(losses) if losses else 0.0
 
@@ -94,18 +97,37 @@ for episode in range(NUM_EPISODES):
     )
 
 # save trained model
-agent.save("dqn_mbta.pt")
+# agent.save("dqn_mbta.pt")
+agent.save(f"dqn_mbta_{NUM_EPISODES}.pt")
 
 env.close()
+# plt.figure(figsize=(10, 5))
+# plt.plot(episode_rewards, color="#378ADD", linewidth=1.0, alpha=0.4, label="per episode")
 
+# window = 10
+# rolling = np.convolve(episode_rewards, np.ones(window)/window, mode='valid')
+# plt.plot(range(window-1, len(episode_rewards)), rolling, color="#378ADD", linewidth=2.0, label="10-ep average")
 
+# plt.title("DQN — reward per episode")
+# plt.xlabel("Episode")
+# plt.ylabel("Total reward")
+# plt.legend()
+# plt.grid(True, alpha=0.3)
+# plt.tight_layout()
+# plt.savefig("dqn_training_curve.png", dpi=150)
+# plt.show()
 plt.figure(figsize=(10, 5))
-plt.plot(episode_rewards, color="#378ADD", linewidth=1.5)
-plt.title("DQN — reward per episode")
+plt.plot(episode_mean_tts, color="#378ADD", linewidth=1.0, alpha=0.4, label="per episode")
+window = 10
+rolling = np.convolve(episode_mean_tts, np.ones(window)/window, mode='valid')
+plt.plot(range(window-1, len(episode_mean_tts)), rolling, color="#378ADD", linewidth=2.0, label="10-ep average")
+plt.axhline(y=27.39, color='red', linestyle='--', linewidth=1.5, label="baseline (27.39 min)")
+plt.title("DQN — mean travel time per episode")
 plt.xlabel("Episode")
-plt.ylabel("Total reward")
+plt.ylabel("Mean travel time (min)")
+plt.legend()
 plt.grid(True, alpha=0.3)
 plt.tight_layout()
-plt.savefig("dqn_training_curve.png", dpi=150)
+plt.savefig("dqn_mean_tt_curve.png", dpi=150)
 plt.show()
 print("Chart saved to dqn_training_curve.png")

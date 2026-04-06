@@ -24,7 +24,7 @@ from sb3_contrib.common.maskable.utils import get_action_masks
 from stable_baselines3.common.callbacks import BaseCallback
 
 # CHANGE 
-TOTAL_TIMESTEPS = 10240
+TOTAL_TIMESTEPS = 30720
 # DONT CHANGE
 MAX_STEPS = 50
 
@@ -34,6 +34,8 @@ class TrainingCallback(BaseCallback):
         self.print_freq = print_freq
         self.episode_rewards = []
         self._current_reward = 0.0  
+        self.episode_mean_tts = []
+
         
 
     def _on_step(self) -> bool:
@@ -41,6 +43,8 @@ class TrainingCallback(BaseCallback):
         if self.locals["dones"][0]:
             self.episode_rewards.append(self._current_reward)
             self._current_reward = 0.0
+            info = self.locals.get("infos", [{}])[0]
+            self.episode_mean_tts.append(info.get("mean_travel_time_min", 0))
         if self.n_calls % self.print_freq == 0:
             info = self.locals.get("infos", [{}])[0]
             print(
@@ -50,6 +54,7 @@ class TrainingCallback(BaseCallback):
                 f"improvement={info.get('improvement_pct', 0):+.1f}% | "
                 f"period={info.get('current_period', '?')}"
             )
+        
         return True
 
 
@@ -66,24 +71,34 @@ callback = TrainingCallback(print_freq=100)
 model.learn(total_timesteps=TOTAL_TIMESTEPS, callback=callback)
 
 # save trained model
-model.save("maskable_mbta_ppo")
+# model.save("maskable_mbta_ppo")
+model.save(f"maskable_mbta_ppo_{TOTAL_TIMESTEPS}")
+
 env.close()
 
 print("Training complete. Model saved to maskable_mbta_ppo.zip")
 
 import matplotlib.pyplot as plt
 plt.figure(figsize=(10, 5))
-plt.plot(callback.episode_rewards, color="#1D9E75", linewidth=1.0, alpha=0.4, label="per episode")
+# plt.plot(callback.episode_rewards, color="#1D9E75", linewidth=1.0, alpha=0.4, label="per episode")
+plt.plot(callback.episode_mean_tts, color="#1D9E75", linewidth=1.0, alpha=0.4, label="per episode")
 
 # rolling average over 10 episodes
 window = 10
-rolling = np.convolve(callback.episode_rewards, np.ones(window)/window, mode='valid')
+# rolling = np.convolve(callback.episode_rewards, np.ones(window)/window, mode='valid')
+rolling = np.convolve(callback.episode_mean_tts, np.ones(window)/window, mode='valid')
+plt.plot(range(window-1, len(callback.episode_mean_tts)), rolling, color="#1D9E75", linewidth=2.0, label="10-ep average")
 
-plt.plot(range(window-1, len(callback.episode_rewards)), rolling, color="#1D9E75", linewidth=2.0, label="10-ep average")
 
-plt.title("PPO — reward per episode")
-plt.xlabel("Episode")
-plt.ylabel("Total reward")
+# plt.plot(range(window-1, len(callback.episode_rewards)), rolling, color="#1D9E75", linewidth=2.0, label="10-ep average")
+
+# plt.title("PPO — reward per episode")
+# plt.xlabel("Episode")
+plt.title("PPO — mean travel time per episode")
+plt.ylabel("Mean travel time (min)")
+# plt.ylabel("Total reward")
+plt.axhline(y=27.39, color='red', linestyle='--', linewidth=1.5, label="baseline (27.39 min)")
+
 plt.grid(True, alpha=0.3)
 plt.tight_layout()
 plt.savefig("ppo_training_curve.png", dpi=150)

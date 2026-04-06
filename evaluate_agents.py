@@ -25,12 +25,16 @@ from dqn_agent import DQNAgent
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.maskable.utils import get_action_masks
 
-# file paths for required inputs and trained models
-GRAPH_PATH = "mbta_data/mbta_graph.pkl"
-DQN_MODEL_PATH = "dqn_mbta.pt"
-PPO_MODEL_PATH = "maskable_mbta_ppo.zip"
+
+# CHANGE THESE TO EVALUATE DIFFERENT RUNS
+DQN_EPISODES = 615
+PPO_TIMESTEPS = 30720
+
 
 # DONT CHANGE
+GRAPH_PATH = "mbta_data/mbta_graph.pkl"
+DQN_MODEL_PATH = f"dqn_mbta_{DQN_EPISODES}.pt"
+PPO_MODEL_PATH = f"maskable_mbta_ppo_{PPO_TIMESTEPS}.zip"
 MAX_STEPS = 50
 RENDER = True
 
@@ -98,7 +102,7 @@ def evaluate_ppo(graph, render=False):
         # retrieve valid action mask from environment
         masks = get_action_masks(env)
         # select deterministic action from trained policy
-        action, _ = model.predict(obs, action_masks=masks, deterministic=True)
+        action, _ = model.predict(obs, action_masks=masks, deterministic=False)
 
         obs, reward, terminated, truncated, info = env.step(action)
         total_reward += reward
