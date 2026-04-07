@@ -170,6 +170,10 @@ class MBTAEnv(gym.Env):
 
     def _is_valid_action(self, action_type: int, u: str, v: str) -> bool:
         """ check if the proposed action is valid for the current graph state """
+        if not 0 < self.budget < 2: 
+            return False 
+        if not 0.5 < self._G[u][v].get("frequency", 1.0) < 2: 
+            return False 
         if action_type == 0:
             return self._is_valid_add(u, v)
         if action_type == 1:
@@ -255,19 +259,18 @@ class MBTAEnv(gym.Env):
                     return False 
                 # The .get already does the initialization 
                 old_freq = self._G[u][v].get("frequency", 1.0)
-                new_freq = max(0.5, old_freq / 2)  # already at 0.5, skip
+                new_freq = max(0.5, old_freq * 1.1)  # already at 0.5, skip
                 # Check if the new frequency is around 0.5
                 # (since it is a decimal number, comparisons between other numbers become weird) 
-                if np.isclose(new_freq, 0.5, rtol=1e-09, atol=1e-09):
+                if np.isclose(old_freq, 0.5, rtol=1e-09, atol=1e-09):
                     return False
                 self._G[u][v]["frequency"] = new_freq
                 
-                # old_travel_time_min = self._G[u][v]["travel_time_min"]
-                # self._G[u][v]["travel_time_min"] *= self._G[u][v]["frequency"]
-                # # Making sure the change is realistic 
-                # self._G[u][v]["travel_time_min"] = max(self._G[u][v]["travel_time_min"], old_travel_time_min * 2)
-                # self._G[u][v]["travel_time_min"] = min(self._G[u][v]["travel_time_min"], old_travel_time_min / 2)
-                self._G[u][v]["travel_time_min"] *= 0.9
+                old_travel_time_min = self._G[u][v]["travel_time_min"]
+                self._G[u][v]["travel_time_min"] *= self._G[u][v]["frequency"]
+                # Making sure the change is realistic 
+                self._G[u][v]["travel_time_min"] = max(self._G[u][v]["travel_time_min"], old_travel_time_min * 2)
+                self._G[u][v]["travel_time_min"] = min(self._G[u][v]["travel_time_min"], old_travel_time_min / 2)
                 self._graph_changed = True
                 self._remaining_budget -= cost
                 return True
@@ -277,9 +280,9 @@ class MBTAEnv(gym.Env):
         if action_type == 3: 
             if self._G.has_edge(u, v):
                 old_freq = self._G[u][v].get("frequency", 1.0)
-                new_freq = max(2.0, old_freq * 2)  # already at 2.0, skip
+                new_freq = max(2.0, old_freq * 0.9)  # already at 2.0, skip
                 # Check if the new frequency is around 2.0 
-                if np.isclose(new_freq, 2.0, rtol=1e-09, atol=1e-09):
+                if np.isclose(old_freq, 2.0, rtol=1e-09, atol=1e-09):
                     return False
                 edge_data = self._G.get_edge_data(u, v)
                 refund = edge_data.get("travel_time_min", 1)
@@ -288,12 +291,11 @@ class MBTAEnv(gym.Env):
                
                 self._G[u][v]["frequency"] = new_freq
                 
-                # old_travel_time_min = self._G[u][v]["travel_time_min"]
-                # self._G[u][v]["travel_time_min"] *= self._G[u][v]["frequency"]
-                # # Making sure the change is realistic 
-                # self._G[u][v]["travel_time_min"] = max(self._G[u][v]["travel_time_min"], old_travel_time_min * 2)
-                # self._G[u][v]["travel_time_min"] = min(self._G[u][v]["travel_time_min"], old_travel_time_min / 2)
-                self._G[u][v]["travel_time_min"] *= 1.1
+                old_travel_time_min = self._G[u][v]["travel_time_min"]
+                self._G[u][v]["travel_time_min"] *= self._G[u][v]["frequency"]
+                # Making sure the change is realistic 
+                self._G[u][v]["travel_time_min"] = max(self._G[u][v]["travel_time_min"], old_travel_time_min * 2)
+                self._G[u][v]["travel_time_min"] = min(self._G[u][v]["travel_time_min"], old_travel_time_min / 2)
                 self._graph_changed = True
                 return True
             return False
