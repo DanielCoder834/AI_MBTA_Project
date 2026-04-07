@@ -24,7 +24,7 @@ from sb3_contrib.common.maskable.utils import get_action_masks
 from stable_baselines3.common.callbacks import BaseCallback
 
 # CHANGE 
-TOTAL_TIMESTEPS = 30720
+TOTAL_TIMESTEPS = 4096
 # DONT CHANGE
 MAX_STEPS = 50
 

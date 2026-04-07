@@ -267,7 +267,7 @@ class MBTAEnv(gym.Env):
                 self._G[u][v]["frequency"] = new_freq
                 
                 old_travel_time_min = self._G[u][v]["travel_time_min"]
-                self._G[u][v]["travel_time_min"] *= self._G[u][v]["frequency"]
+                self._G[u][v]["travel_time_min"] = self._G[u][v]["travel_time_min"] / self._G[u][v]["frequency"]
                 # Making sure the change is realistic 
                 self._G[u][v]["travel_time_min"] = max(self._G[u][v]["travel_time_min"], old_travel_time_min * 2)
                 self._G[u][v]["travel_time_min"] = min(self._G[u][v]["travel_time_min"], old_travel_time_min / 2)
@@ -292,7 +292,7 @@ class MBTAEnv(gym.Env):
                 self._G[u][v]["frequency"] = new_freq
                 
                 old_travel_time_min = self._G[u][v]["travel_time_min"]
-                self._G[u][v]["travel_time_min"] *= self._G[u][v]["frequency"]
+                self._G[u][v]["travel_time_min"] = self._G[u][v]["travel_time_min"] / self._G[u][v]["frequency"]
                 # Making sure the change is realistic 
                 self._G[u][v]["travel_time_min"] = max(self._G[u][v]["travel_time_min"], old_travel_time_min * 2)
                 self._G[u][v]["travel_time_min"] = min(self._G[u][v]["travel_time_min"], old_travel_time_min / 2)
@@ -319,7 +319,7 @@ class MBTAEnv(gym.Env):
         
         mean_tt = self._mean_travel_time()
         reachability = self._reachability()
-        reward = self._prev_mean_tt - mean_tt
+        reward = (self._prev_mean_tt - mean_tt) * 20
         self._prev_mean_tt = mean_tt
 
         # apply penalty for invalid actions - fallback for action masking
