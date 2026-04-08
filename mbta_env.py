@@ -88,6 +88,9 @@ class MBTAEnv(gym.Env):
 
         self._hour = 7
 
+        # for invalid rewards (Number of invalid actions)
+        self.num_invalid_actions = 0 
+
         # [action_type, node_u, node_v]
         self.num_actions = 4 * self.N * self.N
         self.action_space = spaces.Discrete(self.num_actions)
@@ -327,7 +330,9 @@ class MBTAEnv(gym.Env):
 
         # apply penalty for invalid actions - fallback for action masking
         if not valid:
-            reward -= 1000.0
+            # reward -= 1000.0
+            reward -= e ** (1000 * self.num_invalid_actions)
+            self.num_invalid_actions += 1
 
         # no "winning" state, agent just runs until max_steps
         terminated = False
