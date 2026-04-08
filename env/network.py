@@ -9,9 +9,12 @@ from matplotlib.lines import Line2D
 from collections import defaultdict
 import pickle
 
-EDGES_FILE = "./mbta_data/t_edges.txt"
-STOPS_FILE = "./mbta_data/stops.txt"
-OUTPUT_PNG = "./mbta_data/mbta_map.png"
+import os as _os
+_PROJECT_ROOT = _os.path.abspath(_os.path.join(_os.path.dirname(__file__), ".."))
+
+EDGES_FILE = _os.path.join(_PROJECT_ROOT, "data", "t_edges.txt")
+STOPS_FILE = _os.path.join(_PROJECT_ROOT, "data", "stops.txt")
+OUTPUT_PNG = _os.path.join(_PROJECT_ROOT, "outputs", "plots", "mbta_map.png")
 
 LINE_COLORS = {
     "red": "#DA291C",
@@ -157,7 +160,8 @@ if __name__ == "__main__":
     G = build_graph()
 
     # save graph
-    with open("./mbta_data/mbta_graph.pkl", "wb") as f:
+    graph_path = _os.path.join(_PROJECT_ROOT, "outputs", "mbta_graph.pkl")
+    with open(graph_path, "wb") as f:
         pickle.dump(G, f)
 
     draw_graph(G)

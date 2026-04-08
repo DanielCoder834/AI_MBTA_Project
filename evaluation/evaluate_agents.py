@@ -17,10 +17,14 @@ Run (creates mbta_graph.pkl, maskable_mbta_ppo.zip):
 """
 
 import os
+import sys
 import pickle
 
-from mbta_env import MBTAEnv
-from dqn_agent import DQNAgent
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, PROJECT_ROOT)
+
+from env.mbta_env import MBTAEnv
+from agents.dqn_agent import DQNAgent
 
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.maskable.utils import get_action_masks
@@ -32,9 +36,9 @@ PPO_TIMESTEPS = 30720
 
 
 # DONT CHANGE
-GRAPH_PATH = "mbta_data/mbta_graph.pkl"
-DQN_MODEL_PATH = f"dqn_mbta_{DQN_EPISODES}.pt"
-PPO_MODEL_PATH = f"maskable_mbta_ppo_{PPO_TIMESTEPS}.zip"
+GRAPH_PATH = os.path.join(PROJECT_ROOT, "outputs", "mbta_graph.pkl")
+DQN_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "models", f"dqn_mbta_{DQN_EPISODES}.pt")
+PPO_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "models", f"maskable_mbta_ppo_{PPO_TIMESTEPS}.zip")
 MAX_STEPS = 50
 RENDER = True
 

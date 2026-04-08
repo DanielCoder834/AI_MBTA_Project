@@ -1,3 +1,6 @@
 /.venv
+__pycache__/
+outputs/models/
+outputs/mbta_graph.pkl
 *.pt
 *.zip

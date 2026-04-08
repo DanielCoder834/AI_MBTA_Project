@@ -525,8 +525,10 @@ class MBTAEnv(gym.Env):
         return "midday"
 if __name__ == "__main__":
     """Loads the graph, runs the gymnasium env_checker."""
+    import os
+    _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
-    with open("mbta_data/mbta_graph.pkl", "rb") as f:
+    with open(os.path.join(_PROJECT_ROOT, "outputs", "mbta_graph.pkl"), "rb") as f:
         G = pickle.load(f)
 
     env = MBTAEnv(G, max_steps=50, render=True)
