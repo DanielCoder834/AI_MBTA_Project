@@ -126,7 +126,7 @@ class DQNAgent:
         self.target_net.eval()
 
         self.optimizer = optim.Adam(self.q_net.parameters(), lr=lr)
-        self.loss_fn = nn.MSELoss()
+        self.loss_fn = nn.SmoothL1Loss()  # Huber loss — less sensitive to outlier rewards than MSE
 
         # experience replay memory
         self.replay_buffer = ReplayBuffer(buffer_capacity)
@@ -191,6 +191,7 @@ class DQNAgent:
 
         self.optimizer.zero_grad()
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.q_net.parameters(), max_norm=1.0)
         self.optimizer.step()
 
         # periodically update target network
