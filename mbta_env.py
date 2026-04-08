@@ -170,10 +170,13 @@ class MBTAEnv(gym.Env):
 
     def _is_valid_action(self, action_type: int, u: str, v: str) -> bool:
         """ check if the proposed action is valid for the current graph state """
-        if not 0 < self.budget < 2: 
-            return False 
-        if not 0.5 < self._G[u][v].get("frequency", 1.0) < 2: 
-            return False 
+        if self._G.has_edge(u, v): 
+            w = self._edge_weight_from_distance(u, v)
+            cost = w * 2.0 
+            if self._remaining_budget < cost:
+                return False 
+            if not 0.5 < self._G[u][v].get("frequency", 1.0) < 2: 
+                return False 
         if action_type == 0:
             return self._is_valid_add(u, v)
         if action_type == 1:
@@ -259,7 +262,7 @@ class MBTAEnv(gym.Env):
                     return False 
                 # The .get already does the initialization 
                 old_freq = self._G[u][v].get("frequency", 1.0)
-                new_freq = max(0.5, old_freq * 1.1)  # already at 0.5, skip
+                new_freq = min(2.0, old_freq * 1.1)  # already at 0.5, skip
                 # Check if the new frequency is around 0.5
                 # (since it is a decimal number, comparisons between other numbers become weird) 
                 if np.isclose(old_freq, 0.5, rtol=1e-09, atol=1e-09):
@@ -267,7 +270,7 @@ class MBTAEnv(gym.Env):
                 self._G[u][v]["frequency"] = new_freq
                 
                 old_travel_time_min = self._G[u][v]["travel_time_min"]
-                self._G[u][v]["travel_time_min"] *= self._G[u][v]["frequency"]
+                self._G[u][v]["travel_time_min"] =  old_travel_time_min / self._G[u][v]["frequency"]
                 # Making sure the change is realistic 
                 self._G[u][v]["travel_time_min"] = max(self._G[u][v]["travel_time_min"], old_travel_time_min * 2)
                 self._G[u][v]["travel_time_min"] = min(self._G[u][v]["travel_time_min"], old_travel_time_min / 2)
@@ -280,7 +283,7 @@ class MBTAEnv(gym.Env):
         if action_type == 3: 
             if self._G.has_edge(u, v):
                 old_freq = self._G[u][v].get("frequency", 1.0)
-                new_freq = max(2.0, old_freq * 0.9)  # already at 2.0, skip
+                new_freq = max(0.5, old_freq * 0.8)  # already at 2.0, skip
                 # Check if the new frequency is around 2.0 
                 if np.isclose(old_freq, 2.0, rtol=1e-09, atol=1e-09):
                     return False
@@ -292,7 +295,7 @@ class MBTAEnv(gym.Env):
                 self._G[u][v]["frequency"] = new_freq
                 
                 old_travel_time_min = self._G[u][v]["travel_time_min"]
-                self._G[u][v]["travel_time_min"] *= self._G[u][v]["frequency"]
+                self._G[u][v]["travel_time_min"] = old_travel_time_min / self._G[u][v]["frequency"]
                 # Making sure the change is realistic 
                 self._G[u][v]["travel_time_min"] = max(self._G[u][v]["travel_time_min"], old_travel_time_min * 2)
                 self._G[u][v]["travel_time_min"] = min(self._G[u][v]["travel_time_min"], old_travel_time_min / 2)
@@ -319,12 +322,12 @@ class MBTAEnv(gym.Env):
         
         mean_tt = self._mean_travel_time()
         reachability = self._reachability()
-        reward = self._prev_mean_tt - mean_tt
+        reward = (self._prev_mean_tt - mean_tt) * 20
         self._prev_mean_tt = mean_tt
 
         # apply penalty for invalid actions - fallback for action masking
         if not valid:
-            reward -= 1.0
+            reward -= 1000.0
 
         # no "winning" state, agent just runs until max_steps
         terminated = False

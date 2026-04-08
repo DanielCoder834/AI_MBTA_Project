@@ -17,7 +17,7 @@ from mbta_env import MBTAEnv
 from dqn_agent import DQNAgent
 
 # CHANGE
-NUM_EPISODES   = 615
+NUM_EPISODES   = 82
 EPSILON_DECAY  = 0.99
 
 # DONT CHANGE
