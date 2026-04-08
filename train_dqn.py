@@ -17,7 +17,7 @@ from mbta_env import MBTAEnv
 from dqn_agent import DQNAgent
 
 # CHANGE
-NUM_EPISODES   = 82
+NUM_EPISODES   = 400
 EPSILON_DECAY  = 0.995
 
 # DONT CHANGE
@@ -38,14 +38,14 @@ action_dim = env.action_space.n
 agent = DQNAgent(
     state_dim=state_dim,
     action_dim=action_dim,
-    lr=1e-3,
+    lr=1e-4,
     gamma=0.99,
     epsilon_start=1.0,
     epsilon_end=0.05,
     epsilon_decay=EPSILON_DECAY,
     buffer_capacity=5000,
     batch_size=64,
-    target_update_freq=50,
+    target_update_freq=200,
 )
 
 episode_rewards = []
