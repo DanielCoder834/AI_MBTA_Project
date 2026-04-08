@@ -22,9 +22,8 @@ from env.mbta_env import MBTAEnv
 from agents.dqn_agent import DQNAgent
 
 # CHANGE
-VERSION        = 2     # v1: budget=5000, add_cost=w*2, no maintenance, no remove refund
-                       # v2: budget=500, add_cost=w*10, maintenance=0.03/edge/step,
-                       #     remove refund=tt*5, increase_wait refund=1.5
+VERSION        = 2     # v1: budget=5000, add_cost=w*2, no remove refund
+                       # v2: budget=500, add_cost=w*10, remove refund=tt*5, increase_wait refund=1.5
 NUM_EPISODES   = 100
 EPSILON_DECAY  = 0.995
 

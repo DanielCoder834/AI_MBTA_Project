@@ -32,9 +32,8 @@ from agents.dqn_agent import DQNAgent
 
 
 # CHANGE THESE TO EVALUATE DIFFERENT RUNS
-DQN_VERSION        = 1     # v1: budget=5000, add_cost=w*2, no maintenance, no remove refund
-                           # v2: budget=500, add_cost=w*10, maintenance=0.03/edge/step,
-                           #     remove refund=tt*5, increase_wait refund=1.5
+DQN_VERSION        = 1     # v1: budget=5000, add_cost=w*2, no remove refund
+                           # v2: budget=500, add_cost=w*10, remove refund=tt*5, increase_wait refund=1.5
 DQN_EPISODES       = 100
 DQN_LR             = 0.0001
 DQN_EPSILON_DECAY  = 0.995
