@@ -157,11 +157,23 @@ def draw_graph(G):
     plt.show()
 
 if __name__ == "__main__":
-    G = build_graph()
-
-    # save graph
     graph_path = _os.path.join(_PROJECT_ROOT, "outputs", "mbta_graph.pkl")
-    with open(graph_path, "wb") as f:
-        pickle.dump(G, f)
+
+    if _os.path.exists(graph_path):
+        rebuild = input(f"Graph already exists at {graph_path}. Rebuild? (y/n): ").strip().lower()
+        if rebuild == "y":
+            G = build_graph()
+            with open(graph_path, "wb") as f:
+                pickle.dump(G, f)
+            print("Graph rebuilt and saved.")
+        else:
+            with open(graph_path, "rb") as f:
+                G = pickle.load(f)
+            print("Loaded existing graph.")
+    else:
+        G = build_graph()
+        with open(graph_path, "wb") as f:
+            pickle.dump(G, f)
+        print("Graph built and saved.")
 
     draw_graph(G)
