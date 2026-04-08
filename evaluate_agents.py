@@ -102,7 +102,7 @@ def evaluate_ppo(graph, render=False):
         # retrieve valid action mask from environment
         masks = get_action_masks(env)
         # select deterministic action from trained policy
-        action, _ = model.predict(obs, action_masks=masks, deterministic=False)
+        action, _ = model.predict(obs, action_masks=masks, deterministic=True)
 
         obs, reward, terminated, truncated, info = env.step(action)
         total_reward += reward

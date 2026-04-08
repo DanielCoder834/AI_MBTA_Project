@@ -97,31 +97,19 @@ for episode in range(NUM_EPISODES):
     )
 
 # save trained model
-# agent.save("dqn_mbta.pt")
 agent.save(f"dqn_mbta_{NUM_EPISODES}.pt")
 
+# compute baseline from the environment for the plot
+baseline_obs, baseline_info = env.reset()
+baseline_tt = baseline_info["mean_travel_time_min"]
 env.close()
-# plt.figure(figsize=(10, 5))
-# plt.plot(episode_rewards, color="#378ADD", linewidth=1.0, alpha=0.4, label="per episode")
 
-# window = 10
-# rolling = np.convolve(episode_rewards, np.ones(window)/window, mode='valid')
-# plt.plot(range(window-1, len(episode_rewards)), rolling, color="#378ADD", linewidth=2.0, label="10-ep average")
-
-# plt.title("DQN — reward per episode")
-# plt.xlabel("Episode")
-# plt.ylabel("Total reward")
-# plt.legend()
-# plt.grid(True, alpha=0.3)
-# plt.tight_layout()
-# plt.savefig("dqn_training_curve.png", dpi=150)
-# plt.show()
 plt.figure(figsize=(10, 5))
 plt.plot(episode_mean_tts, color="#378ADD", linewidth=1.0, alpha=0.4, label="per episode")
 window = 10
 rolling = np.convolve(episode_mean_tts, np.ones(window)/window, mode='valid')
 plt.plot(range(window-1, len(episode_mean_tts)), rolling, color="#378ADD", linewidth=2.0, label="10-ep average")
-plt.axhline(y=27.39, color='red', linestyle='--', linewidth=1.5, label="baseline (27.39 min)")
+plt.axhline(y=baseline_tt, color='red', linestyle='--', linewidth=1.5, label=f"baseline ({baseline_tt:.2f} min)")
 plt.title("DQN — mean travel time per episode")
 plt.xlabel("Episode")
 plt.ylabel("Mean travel time (min)")
@@ -130,4 +118,4 @@ plt.grid(True, alpha=0.3)
 plt.tight_layout()
 plt.savefig("dqn_mean_tt_curve.png", dpi=150)
 plt.show()
-print("Chart saved to dqn_training_curve.png")
+print("Chart saved to dqn_mean_tt_curve.png")
