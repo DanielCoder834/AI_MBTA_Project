@@ -1,0 +1,27 @@
+
+=== DQN Evaluation ===
+Final mean travel time: 32.44 min
+Improvement from baseline: +16.19%
+Final number of edges: 165
+Episode steps: 50
+Total reward: 125.35
+
+Final graph saved to /Users/anarang/Desktop/AI_MBTA_Project/outputs/models/dqn_v1_ep100_lr0.0001_ed0.995_buf5000_tgt200_final_graph.pkl
+Final graph visualization saved to /Users/anarang/Desktop/AI_MBTA_Project/outputs/plots/dqn_v1_ep100_lr0.0001_ed0.995_buf5000_tgt200_final_graph.png
+
+--- Graph Changes (DQN) ---
+  Edges removed:          0
+  New edges added:        50
+  Frequency increased:    0 edges
+  Frequency decreased:    0 edges
+  Unchanged:              115 edges
+
+========================================================================
+FINAL COMPARISON
+========================================================================
+Agent          Mean TT (min)     Improve %     Edges     Steps   Reward    
+------------------------------------------------------------------------
+DQN            32.44             16.19         165       50      125.35    
+========================================================================
+Lowest final mean travel time: DQN
+Highest total reward: DQN

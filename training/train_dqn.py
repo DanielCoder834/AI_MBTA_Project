@@ -22,6 +22,9 @@ from env.mbta_env import MBTAEnv
 from agents.dqn_agent import DQNAgent
 
 # CHANGE
+VERSION        = 2     # v1: budget=5000, add_cost=w*2, no maintenance, no remove refund
+                       # v2: budget=500, add_cost=w*10, maintenance=0.03/edge/step,
+                       #     remove refund=tt*5, increase_wait refund=1.5
 NUM_EPISODES   = 100
 EPSILON_DECAY  = 0.995
 
@@ -33,7 +36,7 @@ with open(os.path.join(PROJECT_ROOT, "outputs", "mbta_graph.pkl"), "rb") as f:
     G = pickle.load(f)
 
 # create environment
-env = MBTAEnv(G, max_steps=MAX_STEPS, render=False, budget=5000.0)
+env = MBTAEnv(G, max_steps=MAX_STEPS, render=False, budget=500.0)
 
 # get observation/action sizes
 state_dim = env.observation_space.shape[0]
@@ -102,7 +105,7 @@ for episode in range(NUM_EPISODES):
     )
 
 # run tag encodes key hyperparameters for easy identification
-RUN_TAG = f"dqn_ep{NUM_EPISODES}_lr{agent.optimizer.param_groups[0]['lr']}_ed{EPSILON_DECAY}_buf{agent.replay_buffer.buffer.maxlen}_tgt{agent.target_update_freq}"
+RUN_TAG = f"dqn_v{VERSION}_ep{NUM_EPISODES}_lr{agent.optimizer.param_groups[0]['lr']}_ed{EPSILON_DECAY}_buf{agent.replay_buffer.buffer.maxlen}_tgt{agent.target_update_freq}"
 
 # save trained model
 model_path = os.path.join(PROJECT_ROOT, "outputs", "models", f"{RUN_TAG}.pt")

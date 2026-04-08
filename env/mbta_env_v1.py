@@ -182,7 +182,7 @@ class MBTAEnv(gym.Env):
             if not self._is_valid_add(u, v):
                 return False
             w = self._edge_weight_from_distance(u, v)
-            cost = w * 10.0
+            cost = w * 2.0
             return self._remaining_budget >= cost
         if action_type == 1:
             return self._is_valid_remove(u, v)
@@ -254,9 +254,9 @@ class MBTAEnv(gym.Env):
         if action_type == 0:
             if self._is_valid_add(u, v):
                 w = self._edge_weight_from_distance(u, v)
-                cost = w * 10.0
+                cost = w * 2.0 
                 if self._remaining_budget < cost:
-                    return False
+                    return False 
                 self._G.add_edge(u, v, travel_time_min=w, wait_time=DEFAULT_WAIT_TIME, line="new")
                 self._remaining_budget -= cost
                 self._graph_changed = True  
@@ -266,10 +266,10 @@ class MBTAEnv(gym.Env):
         # remove edge
         if action_type == 1:
             if self._is_valid_remove(u, v):
-                edge_data = self._G.get_edge_data(u, v)
-                refund = edge_data.get("travel_time_min", 0) * 5.0
+                # edge_data = self._G.get_edge_data(u, v)
+                # refund = edge_data.get("travel_time_min", 0) * 0.5
                 self._G.remove_edge(u, v)
-                self._remaining_budget += refund
+                # self._remaining_budget += refund
                 self._graph_changed = True
                 return True
             return False
@@ -295,7 +295,7 @@ class MBTAEnv(gym.Env):
                 old_wt = self._G[u][v].get("wait_time", DEFAULT_WAIT_TIME)
                 if old_wt >= MAX_WAIT_TIME - 1e-9:
                     return False
-                refund = WAIT_TIME_STEP * 1.5
+                refund = WAIT_TIME_STEP * 1.0
                 self._G[u][v]["wait_time"] = min(MAX_WAIT_TIME, old_wt + WAIT_TIME_STEP)
                 self._remaining_budget += refund
                 self._graph_changed = True
@@ -317,20 +317,12 @@ class MBTAEnv(gym.Env):
 
         self._hour = (self._hour + 0.5) % 24
         self._current_period = self._get_current_period()
-
-        # per-step maintenance cost: every edge costs budget to operate
-        maintenance = self._G.number_of_edges() * 0.03
-        self._remaining_budget -= maintenance
-
+        
+        
         mean_tt = self._mean_travel_time()
         reachability = self._reachability()
         reward = (self._prev_mean_tt - mean_tt) * 20
         self._prev_mean_tt = mean_tt
-
-        # penalty for going into budget debt
-        if self._remaining_budget < 0:
-            reward -= 5.0
-            self._remaining_budget = 0.0
 
         # apply penalty for invalid actions - fallback for action masking
         if not valid:
