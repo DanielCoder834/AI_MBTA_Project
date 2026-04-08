@@ -18,7 +18,7 @@ from dqn_agent import DQNAgent
 
 # CHANGE
 NUM_EPISODES   = 82
-EPSILON_DECAY  = 0.99
+EPSILON_DECAY  = 0.995
 
 # DONT CHANGE
 MAX_STEPS = 50

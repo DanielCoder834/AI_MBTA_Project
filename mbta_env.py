@@ -359,25 +359,20 @@ class MBTAEnv(gym.Env):
         self._fig.canvas.flush_events()
         plt.pause(0.001)
 
-    @staticmethod
-    def _edge_total_weight(u, v, data):
-        """ edge weight function for Dijkstra: ride time + wait time """
-        return data.get("travel_time_min", 0) + data.get("wait_time", DEFAULT_WAIT_TIME)
-
     def _mean_travel_time(self) -> float:
-        """ calculates the average travel time in minutes across all pairs of stations, applying a penalty for unreachable pairs. """
+        """ calculates the average travel time in minutes across all pairs of stations.
+            Routes by ride time only; wait time is added once (first edge of the path). """
         period = self.TIME_PERIODS[self._current_period]
         downtown = self.DOWNTOWN
         total, count = 0.0, 0.0
 
-        # per-line tracking: sum edge total weights (ride + wait) by line
+        # per-line tracking: sum edge ride times by line
         line_totals = {"red": 0.0, "orange": 0.0, "blue": 0.0, "green": 0.0, "new": 0.0}
         line_counts = {"red": 0.0, "orange": 0.0, "blue": 0.0, "green": 0.0, "new": 0.0}
         for u, v, data in self._G.edges(data=True):
             line = data.get("line", "other")
             if line in line_totals:
-                edge_time = data.get("travel_time_min", 0) + data.get("wait_time", DEFAULT_WAIT_TIME)
-                line_totals[line] += edge_time
+                line_totals[line] += data.get("travel_time_min", 0)
                 line_counts[line] += 1.0
 
         self._per_line_mean_tt = {
@@ -386,8 +381,9 @@ class MBTAEnv(gym.Env):
             for line in line_totals
         }
 
-        lengths = dict(
-            nx.all_pairs_dijkstra_path_length(self._G, weight=self._edge_total_weight)
+        # Dijkstra by ride time only; returns (distances, paths) per source
+        all_results = dict(
+            nx.all_pairs_dijkstra(self._G, weight="travel_time_min")
         )
 
         for i, u in enumerate(self.nodes):
@@ -417,8 +413,27 @@ class MBTAEnv(gym.Env):
                 else:
                     w = period["weight_other"]
 
-                dist = lengths.get(u, {}).get(v, None)
-                travel_time = dist if dist is not None else self.disconnect_penalty
+                distances, paths = all_results.get(u, ({}, {}))
+                if v in distances:
+                    ride_time = distances[v]
+                    path = paths[v]
+                    wait = 0.0
+                    if len(path) >= 2:
+                        # wait at the first edge (boarding)
+                        first_edge = self._G[path[0]][path[1]]
+                        wait += first_edge.get("wait_time", DEFAULT_WAIT_TIME)
+                        # wait again at each line transfer
+                        prev_line = first_edge.get("line", "")
+                        for k in range(1, len(path) - 1):
+                            edge = self._G[path[k]][path[k + 1]]
+                            curr_line = edge.get("line", "")
+                            if curr_line != prev_line:
+                                wait += edge.get("wait_time", DEFAULT_WAIT_TIME)
+                            prev_line = curr_line
+                    travel_time = ride_time + wait
+                else:
+                    travel_time = self.disconnect_penalty
+
                 total += w * travel_time
                 count += w
 
@@ -427,7 +442,7 @@ class MBTAEnv(gym.Env):
     def _reachability(self) -> float:
         """ calculates the fraction of station pairs reachable from each other using Dijkstra's algorithm """
         lengths = dict(
-            nx.all_pairs_dijkstra_path_length(self._G, weight=self._edge_total_weight)
+            nx.all_pairs_dijkstra_path_length(self._G, weight="travel_time_min")
         )
         reachable = 0
         total = 0
