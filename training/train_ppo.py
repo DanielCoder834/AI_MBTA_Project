@@ -68,8 +68,8 @@ with open(os.path.join(PROJECT_ROOT, "outputs", "mbta_graph.pkl"), "rb") as f:
     G = pickle.load(f)
 
 # initialize environment
-# change render=True to watch it train
-env = MBTAEnv(G, max_steps=MAX_STEPS, render=False, budget=5000.0)
+# change render_mode="human" to watch it train
+env = MBTAEnv(G, max_steps=MAX_STEPS, render_mode=None, budget=5000.0)
 
 model = MaskablePPO("MlpPolicy", env, verbose=1)
 callback = TrainingCallback(print_freq=100)

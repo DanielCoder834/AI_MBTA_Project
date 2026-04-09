@@ -25,7 +25,7 @@ from agents.dqn_agent import DQNAgent
 VERSION        = 2     # v1: budget=5000, add_cost=w*2, no remove refund
                        # v2: budget=1000, add_cost=w*5, remove refund=tt*2.5,
                        #     freq actions modify travel_time (±0.5min), speed_up cost=1.5, slow_down refund=0.75
-NUM_EPISODES   = 100
+NUM_EPISODES   = 200
 EPSILON_DECAY  = 0.995
 
 # DONT CHANGE
@@ -36,7 +36,7 @@ with open(os.path.join(PROJECT_ROOT, "outputs", "mbta_graph.pkl"), "rb") as f:
     G = pickle.load(f)
 
 # create environment
-env = MBTAEnv(G, max_steps=MAX_STEPS, render=False, budget=1000.0)
+env = MBTAEnv(G, max_steps=MAX_STEPS, render_mode=None, budget=1000.0)
 
 # get observation/action sizes
 state_dim = env.observation_space.shape[0]

@@ -66,18 +66,19 @@ class MBTAEnv(gym.Env):
         base_graph: nx.Graph,
         max_steps: int = MAX_STEPS,
         disconnect_penalty: float = DISCONNECT_PENALTY,
-        render: bool = False,
+        render_mode: str | None = None,
         budget: float = 500.0,
     ):
         super().__init__()
 
+        self.render_mode = render_mode
         self._base_graph = base_graph
         self.nodes: list[str] = sorted(self._base_graph.nodes())
         self.N: int = len(self.nodes)
 
         self.max_steps = max_steps
         self.disconnect_penalty = disconnect_penalty
-        self._render_enabled = render
+        self._render_enabled = render_mode == "human"
 
         self._G = None
         self._prev_mean_tt = None
@@ -155,10 +156,10 @@ class MBTAEnv(gym.Env):
         """ only allow removing edges that exist and aren't bridges (whose removal would disconnect the graph)"""
         if not self._G.has_edge(u, v):
             return False
-        # use precomputed bridges from action_masks() if available, otherwise compute
         bridges = getattr(self, "_bridges", None)
-        if bridges is None:
+        if bridges is None or self._graph_changed:
             bridges = set(map(frozenset, nx.bridges(self._G)))
+            self._bridges = bridges
         return frozenset((u, v)) not in bridges
 
     def _is_valid_action(self, action_type: int, u: str, v: str) -> bool:
@@ -370,18 +371,16 @@ class MBTAEnv(gym.Env):
                 u_suburb   = u in self.SUBURBS
                 v_suburb   = v in self.SUBURBS
 
+                is_suburb_downtown = (u_suburb and v_downtown) or (u_downtown and v_suburb)
+
                 if self._current_period == "am_rush":
-                    if u_suburb and v_downtown:
+                    if is_suburb_downtown:
                         w = period["weight_downtown"]
-                    elif u_downtown and v_suburb:
-                        w = period["weight_suburb"]
                     else:
                         w = period["weight_other"]
                 elif self._current_period == "pm_rush":
-                    if u_downtown and v_suburb:
+                    if is_suburb_downtown:
                         w = period["weight_suburb"]
-                    elif u_suburb and v_downtown:
-                        w = period["weight_downtown"]
                     else:
                         w = period["weight_other"]
                 else:
@@ -481,7 +480,7 @@ if __name__ == "__main__":
     with open(os.path.join(_PROJECT_ROOT, "outputs", "mbta_graph.pkl"), "rb") as f:
         G = pickle.load(f)
 
-    env = MBTAEnv(G, max_steps=50, render=True)
+    env = MBTAEnv(G, max_steps=50, render_mode="human")
 
     print("Running gymnasium env_checker …")
     check_env(env, warn=True)
