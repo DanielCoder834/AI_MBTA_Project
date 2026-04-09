@@ -24,7 +24,7 @@ from matplotlib.lines import Line2D
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, PROJECT_ROOT)
 
-from env.mbta_env_v1 import MBTAEnv
+from env.mbta_env import MBTAEnv
 from agents.dqn_agent import DQNAgent
 
 # from sb3_contrib import MaskablePPO
@@ -32,8 +32,9 @@ from agents.dqn_agent import DQNAgent
 
 
 # CHANGE THESE TO EVALUATE DIFFERENT RUNS
-DQN_VERSION        = 1     # v1: budget=5000, add_cost=w*2, no remove refund
-                           # v2: budget=500, add_cost=w*10, remove refund=tt*5, increase_wait refund=1.5
+DQN_VERSION        = 2     # v1: budget=5000, add_cost=w*2, no remove refund
+                           # v2: budget=1000, add_cost=w*5, remove refund=tt*2.5,
+                           #     freq actions modify travel_time (±0.5min), speed_up cost=1.5, slow_down refund=0.75
 DQN_EPISODES       = 100
 DQN_LR             = 0.0001
 DQN_EPSILON_DECAY  = 0.995
@@ -151,17 +152,14 @@ LINE_COLORS = {
 }
 
 
-DEFAULT_WAIT_TIME = 5.0  # must match env constant
-
-
 def save_final_graph(baseline_graph, final_graph, agent_name, run_tag):
     """Save the final modified graph as a pickle and a visualization PNG.
 
     Compares against baseline_graph to highlight:
     - removed edges (dotted red)
     - new edges added by agent (dashed purple)
-    - frequency increases / wait time decreases (thicker, green glow)
-    - frequency decreases / wait time increases (thinner, red-ish)
+    - sped-up edges / lower travel time (thicker, green glow)
+    - slowed-down edges / higher travel time (thinner, red glow)
     """
     outputs_dir = os.path.join(PROJECT_ROOT, "outputs")
     graphs_dir = os.path.join(outputs_dir, "graphs")
@@ -185,26 +183,30 @@ def save_final_graph(baseline_graph, final_graph, agent_name, run_tag):
     removed_edges = baseline_edges - final_edges
     new_edges = [(u, v) for u, v, d in final_graph.edges(data=True) if d.get("line") == "new"]
 
-    # categorise surviving original edges by wait-time change
-    freq_increased = []  # wait_time decreased (more frequent service)
-    freq_decreased = []  # wait_time increased (less frequent service)
+    # categorise surviving original edges by travel-time change
+    sped_up = []     # travel_time decreased (faster service)
+    slowed_down = [] # travel_time increased (slower service)
     freq_unchanged = []  # no change
-    edge_wait_labels = {}
+    edge_tt_labels = {}
 
     for u, v, d in final_graph.edges(data=True):
         if d.get("line") == "new":
             continue
-        final_wt = d.get("wait_time", DEFAULT_WAIT_TIME)
-        base_wt = DEFAULT_WAIT_TIME
-        delta = final_wt - base_wt
+        # compare against baseline travel time
+        if baseline_graph.has_edge(u, v):
+            base_tt = baseline_graph[u][v].get("travel_time_min", 0)
+        else:
+            continue
+        final_tt = d.get("travel_time_min", 0)
+        delta = final_tt - base_tt
         if abs(delta) < 1e-9:
             freq_unchanged.append((u, v))
         elif delta < 0:
-            freq_increased.append((u, v))
-            edge_wait_labels[(u, v)] = f"{delta:+.0f}m"
+            sped_up.append((u, v))
+            edge_tt_labels[(u, v)] = f"{delta:+.1f}m"
         else:
-            freq_decreased.append((u, v))
-            edge_wait_labels[(u, v)] = f"{delta:+.0f}m"
+            slowed_down.append((u, v))
+            edge_tt_labels[(u, v)] = f"{delta:+.1f}m"
 
     fig, ax = plt.subplots(figsize=(15, 10))
 
@@ -227,9 +229,9 @@ def save_final_graph(baseline_graph, final_graph, agent_name, run_tag):
                 edge_color=LINE_COLORS[lc], width=3.0, alpha=0.92, ax=ax,
             )
 
-    # 3) frequency-increased edges — thicker with green glow
+    # 3) sped-up edges — thicker with green glow
     for lc in ["green", "red", "orange", "blue"]:
-        elist = [(u, v) for u, v in freq_increased
+        elist = [(u, v) for u, v in sped_up
                  if final_graph[u][v].get("line") == lc]
         if elist:
             # green glow behind
@@ -243,9 +245,9 @@ def save_final_graph(baseline_graph, final_graph, agent_name, run_tag):
                 edge_color=LINE_COLORS[lc], width=4.0, alpha=0.92, ax=ax,
             )
 
-    # 4) frequency-decreased edges — thinner with red glow
+    # 4) slowed-down edges — thinner with red glow
     for lc in ["green", "red", "orange", "blue"]:
-        elist = [(u, v) for u, v in freq_decreased
+        elist = [(u, v) for u, v in slowed_down
                  if final_graph[u][v].get("line") == lc]
         if elist:
             # red glow behind
@@ -267,10 +269,10 @@ def save_final_graph(baseline_graph, final_graph, agent_name, run_tag):
             style="dashed", ax=ax,
         )
 
-    # 6) wait-time delta labels on changed edges
-    if edge_wait_labels:
+    # 6) travel-time delta labels on changed edges
+    if edge_tt_labels:
         nx.draw_networkx_edge_labels(
-            final_graph, pos, edge_labels=edge_wait_labels,
+            final_graph, pos, edge_labels=edge_tt_labels,
             font_size=5.5, font_color="#333333", ax=ax,
             bbox=dict(boxstyle="round,pad=0.1", fc="white", ec="none", alpha=0.7),
         )
@@ -310,9 +312,9 @@ def save_final_graph(baseline_graph, final_graph, agent_name, run_tag):
         Line2D([0], [0], color="#CC0000", linewidth=2.5, linestyle="dotted",
                label="Removed edge"),
         Line2D([0], [0], color="#2ECC71", linewidth=6, alpha=0.5,
-               label="Freq. increased (lower wait)"),
+               label="Sped up (lower travel time)"),
         Line2D([0], [0], color="#E74C3C", linewidth=5, alpha=0.5,
-               label="Freq. decreased (higher wait)"),
+               label="Slowed down (higher travel time)"),
         Line2D([0], [0], marker="o", color="none", markerfacecolor="black",
                markeredgecolor="#aaa", markersize=9, label="Connection"),
     ]
@@ -334,8 +336,8 @@ def save_final_graph(baseline_graph, final_graph, agent_name, run_tag):
     print(f"\n--- Graph Changes ({agent_name}) ---")
     print(f"  Edges removed:          {len(removed_edges)}")
     print(f"  New edges added:        {len(new_edges)}")
-    print(f"  Frequency increased:    {len(freq_increased)} edges")
-    print(f"  Frequency decreased:    {len(freq_decreased)} edges")
+    print(f"  Sped up:                {len(sped_up)} edges")
+    print(f"  Slowed down:            {len(slowed_down)} edges")
     print(f"  Unchanged:              {len(freq_unchanged)} edges")
 
 

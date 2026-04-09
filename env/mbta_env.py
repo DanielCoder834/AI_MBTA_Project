@@ -18,10 +18,9 @@ import matplotlib.pyplot as plt
 # CONSTANTS
 DISCONNECT_PENALTY = 500.0
 MAX_STEPS = 50
-DEFAULT_WAIT_TIME = 5.0   # minutes — baseline headway per edge
-MIN_WAIT_TIME = 1.0       # minutes — most frequent service possible
-MAX_WAIT_TIME = 10.0      # minutes — least frequent service possible
-WAIT_TIME_STEP = 1.0      # minutes — each action adjusts wait time by this amount
+MIN_TRAVEL_TIME = 0.5     # minutes — fastest an edge can go
+MAX_TRAVEL_TIME = 12.0    # minutes — slowest an edge can go
+FREQ_STEP = 0.5           # minutes — each frequency action adjusts travel_time_min by this
 
 class MBTAEnv(gym.Env):
     """
@@ -57,11 +56,11 @@ class MBTAEnv(gym.Env):
     TIME_PERIODS = {
         "am_rush":   {"hours": (7, 9),   "weight_downtown": 3.0, "weight_suburb": 0.5, "weight_other": 1.0},
         "pm_rush":   {"hours": (17, 19), "weight_downtown": 0.5, "weight_suburb": 3.0, "weight_other": 1.0},
-        "midday":    {"hours": (10, 16), "weight_downtown": 1.0, "weight_suburb": 1.0, "weight_other": 1.0},
+        "midday":    {"hours": (9, 17),  "weight_downtown": 1.0, "weight_suburb": 1.0, "weight_other": 1.0},
         "evening":   {"hours": (19, 22), "weight_downtown": 0.8, "weight_suburb": 1.2, "weight_other": 0.8},
         "overnight": {"hours": (22, 7),  "weight_downtown": 0.2, "weight_suburb": 0.2, "weight_other": 0.2},
-
     }
+
     def __init__(
         self,
         base_graph: nx.Graph,
@@ -80,57 +79,43 @@ class MBTAEnv(gym.Env):
         self.disconnect_penalty = disconnect_penalty
         self._render_enabled = render
 
-        # copy of graph the agent will modify
         self._G = None
-
         self._prev_mean_tt = None
         self._baseline_mean = None
         self._step_count = 0
-
-
-        self._current_period = "midday"  
-
+        self._current_period = "midday"
         self._hour = 7
 
-        # action_type: 0=ADD_EDGE, 1=REMOVE_EDGE, 2=REDUCE_WAIT_TIME, 3=INCREASE_WAIT_TIME
-        self.num_actions = 4 * self.N * self.N
+        # action_type: 0=ADD_EDGE, 1=REMOVE_EDGE, 2=SPEED_UP_EDGE, 3=SLOW_DOWN_EDGE
+        self._num_pairs = self.N * (self.N - 1)  # ordered pairs, no self-loops
+        self.num_actions = 4 * self._num_pairs
         self.action_space = spaces.Discrete(self.num_actions)
-        
+
         self._cached_mask = None
         self._graph_changed = True
         self.budget = budget
         self._remaining_budget = budget
 
-
-
-        # example observation:
-        # [ normalized_mean_travel_time,
-        #   normalized_edge_density,
-        #   normalized_improvement,
-        #   reachability_ratio,
-        #   normalized_mean_degree ]
         self.observation_space = spaces.Box(
             low=np.array( [0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32),
             high=np.array([1.0, 1.0,  1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0], dtype=np.float32),
             dtype=np.float32,
         )
-    
-    # encode and decode action for discrete action space
+
     def encode_action(self, action_type: int, u_idx: int, v_idx: int) -> int:
-        return action_type * (self.N * self.N) + u_idx * self.N + v_idx
+        pair_idx = u_idx * (self.N - 1) + (v_idx if v_idx < u_idx else v_idx - 1)
+        return action_type * self._num_pairs + pair_idx
 
     def decode_action(self, action: int) -> tuple[int, int, int]:
         action = int(action)
-        action_type = action // (self.N * self.N)
-        rem = action % (self.N * self.N)
-        u_idx = rem // self.N
-        v_idx = rem % self.N
+        action_type = action // self._num_pairs
+        pair_idx = action % self._num_pairs
+        u_idx = pair_idx // (self.N - 1)
+        temp = pair_idx % (self.N - 1)
+        v_idx = temp if temp < u_idx else temp + 1
         return action_type, u_idx, v_idx
 
     def reset(self, *, seed: int | None = None, options: dict[str, Any] | None = None):
-        """
-        Resets the environment to an initial state and returns an initial observation and info.
-        """
         super().reset(seed=seed)
         self._G = copy.deepcopy(self._base_graph)
         self._step_count = 0
@@ -146,18 +131,18 @@ class MBTAEnv(gym.Env):
             if d.get("lon") is not None and d.get("lat") is not None
         }
         
-        # check edges and initialize wait times
+        # check edges
         for u, v, data in self._G.edges(data=True):
             if "travel_time_min" not in data:
                 raise ValueError(f"Missing travel_time_min on edge {u}-{v} in base graph")
-            data["wait_time"] = DEFAULT_WAIT_TIME
-        self._baseline_mean = self._mean_travel_time()
+
+        lengths = self._dijkstra_lengths()
+        self._baseline_mean = self._mean_travel_time(lengths)
         self._prev_mean_tt = self._baseline_mean
-        reachability = self._reachability()
+        reachability = self._reachability(lengths)
+        per_line = self._per_line_stats()
 
-
-
-        obs = self._observation(self._baseline_mean, reachability)
+        obs = self._observation(self._baseline_mean, reachability, per_line)
         info = self._info(self._baseline_mean)
 
         return obs, info
@@ -182,25 +167,19 @@ class MBTAEnv(gym.Env):
             if not self._is_valid_add(u, v):
                 return False
             w = self._edge_weight_from_distance(u, v)
-            cost = w * 10.0
-            return self._remaining_budget >= cost
+            return self._remaining_budget >= w * 5.0
         if action_type == 1:
             return self._is_valid_remove(u, v)
-        if action_type == 2:  # reduce wait time
+        if action_type == 2:  # speed up
             if not self._G.has_edge(u, v):
                 return False
-            wt = self._G[u][v].get("wait_time", DEFAULT_WAIT_TIME)
-            if wt <= MIN_WAIT_TIME + 1e-9:
-                return False
-            cost = WAIT_TIME_STEP * 2.0
-            return self._remaining_budget >= cost
-        if action_type == 3:  # increase wait time
+            tt = self._G[u][v].get("travel_time_min", 1)
+            return tt > MIN_TRAVEL_TIME + 1e-9 and self._remaining_budget >= FREQ_STEP * 3.0
+        if action_type == 3:  # slow down
             if not self._G.has_edge(u, v):
                 return False
-            wt = self._G[u][v].get("wait_time", DEFAULT_WAIT_TIME)
-            if wt >= MAX_WAIT_TIME - 1e-9:
-                return False
-            return True
+            tt = self._G[u][v].get("travel_time_min", 1)
+            return tt < MAX_TRAVEL_TIME - 1e-9
         return False
 
     def action_masks(self) -> np.ndarray:
@@ -214,6 +193,8 @@ class MBTAEnv(gym.Env):
         for action_type in range(4):
             for u_idx, u in enumerate(self.nodes):
                 for v_idx, v in enumerate(self.nodes):
+                    if u_idx == v_idx:
+                        continue
                     a = self.encode_action(action_type, u_idx, v_idx)
                     mask[a] = self._is_valid_action(action_type, u, v)
         self._cached_mask = mask
@@ -233,10 +214,8 @@ class MBTAEnv(gym.Env):
             * math.cos(math.radians(lat2))
             * math.sin(dlon / 2) ** 2
         )
+        return r * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
-        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-        return r * c
-    
     def _edge_weight_from_distance(self, u: str, v: str) -> float:
         """ estimate travel time in minutes for a new edge based on the haversine distance between stations """
         try:
@@ -248,59 +227,52 @@ class MBTAEnv(gym.Env):
         return float(max(1.0, round((km / 30.0) * 60.0, 1)))
 
     def _apply_action(self, action_type: int, u: str, v: str) -> bool:
+        if action_type == 0:  # add edge
+            if not self._is_valid_add(u, v):
+                return False
+            w = self._edge_weight_from_distance(u, v)
+            cost = w * 5.0
+            if self._remaining_budget < cost:
+                return False
+            self._G.add_edge(u, v, travel_time_min=w, line="new")
+            self._remaining_budget -= cost
+            self._graph_changed = True
+            return True
 
-        """ applies the proposed action to the graph if valid, returns whether the action was valid """
-        # add edge
-        if action_type == 0:
-            if self._is_valid_add(u, v):
-                w = self._edge_weight_from_distance(u, v)
-                cost = w * 10.0
-                if self._remaining_budget < cost:
-                    return False
-                self._G.add_edge(u, v, travel_time_min=w, wait_time=DEFAULT_WAIT_TIME, line="new")
-                self._remaining_budget -= cost
-                self._graph_changed = True  
-                return True
-            return False
+        if action_type == 1:  # remove edge
+            if not self._is_valid_remove(u, v):
+                return False
+            edge_data = self._G.get_edge_data(u, v)
+            refund = edge_data.get("travel_time_min", 0) * 2.5
+            self._G.remove_edge(u, v)
+            self._remaining_budget = min(self._remaining_budget + refund, self.budget)
+            self._graph_changed = True
+            return True
 
-        # remove edge
-        if action_type == 1:
-            if self._is_valid_remove(u, v):
-                edge_data = self._G.get_edge_data(u, v)
-                refund = edge_data.get("travel_time_min", 0) * 5.0
-                self._G.remove_edge(u, v)
-                self._remaining_budget += refund
-                self._graph_changed = True
-                return True
-            return False
+        if action_type == 2:  # speed up edge
+            if not self._G.has_edge(u, v):
+                return False
+            old_tt = self._G[u][v].get("travel_time_min", 1)
+            if old_tt <= MIN_TRAVEL_TIME + 1e-9:
+                return False
+            cost = FREQ_STEP * 3.0
+            if self._remaining_budget < cost:
+                return False
+            self._G[u][v]["travel_time_min"] = max(MIN_TRAVEL_TIME, old_tt - FREQ_STEP)
+            self._remaining_budget -= cost
+            self._graph_changed = True
+            return True
 
-        # Reduce wait time (increase frequency of service)
-        if action_type == 2:
-            if self._G.has_edge(u, v):
-                old_wt = self._G[u][v].get("wait_time", DEFAULT_WAIT_TIME)
-                if old_wt <= MIN_WAIT_TIME + 1e-9:
-                    return False
-                cost = WAIT_TIME_STEP * 2.0
-                if self._remaining_budget < cost:
-                    return False
-                self._G[u][v]["wait_time"] = max(MIN_WAIT_TIME, old_wt - WAIT_TIME_STEP)
-                self._remaining_budget -= cost
-                self._graph_changed = True
-                return True
-            return False
-
-        # Increase wait time (decrease frequency of service)
-        if action_type == 3:
-            if self._G.has_edge(u, v):
-                old_wt = self._G[u][v].get("wait_time", DEFAULT_WAIT_TIME)
-                if old_wt >= MAX_WAIT_TIME - 1e-9:
-                    return False
-                refund = WAIT_TIME_STEP * 1.5
-                self._G[u][v]["wait_time"] = min(MAX_WAIT_TIME, old_wt + WAIT_TIME_STEP)
-                self._remaining_budget += refund
-                self._graph_changed = True
-                return True
-            return False
+        if action_type == 3:  # slow down edge
+            if not self._G.has_edge(u, v):
+                return False
+            old_tt = self._G[u][v].get("travel_time_min", 1)
+            if old_tt >= MAX_TRAVEL_TIME - 1e-9:
+                return False
+            self._G[u][v]["travel_time_min"] = min(MAX_TRAVEL_TIME, old_tt + FREQ_STEP)
+            self._remaining_budget = min(self._remaining_budget + FREQ_STEP * 1.5, self.budget)
+            self._graph_changed = True
+            return True
 
         return False
     
@@ -318,20 +290,22 @@ class MBTAEnv(gym.Env):
         self._hour = (self._hour + 0.5) % 24
         self._current_period = self._get_current_period()
 
-        mean_tt = self._mean_travel_time()
-        reachability = self._reachability()
+        lengths = self._dijkstra_lengths()
+        mean_tt = self._mean_travel_time(lengths)
+        reachability = self._reachability(lengths)
+        per_line = self._per_line_stats()
         reward = (self._prev_mean_tt - mean_tt) * 20
         self._prev_mean_tt = mean_tt
 
         # apply penalty for invalid actions - fallback for action masking
         if not valid:
-            reward -= 1000.0
+            reward -= 10.0
 
         # no "winning" state, agent just runs until max_steps
         terminated = False
         truncated = self._step_count >= self.max_steps
 
-        obs = self._observation(mean_tt, reachability)
+        obs = self._observation(mean_tt, reachability, per_line)
         info = self._info(mean_tt)
         info["last_action"] = (action_type, u, v)
         info["action_valid"] = valid
@@ -351,21 +325,21 @@ class MBTAEnv(gym.Env):
         nx.draw_networkx_edges(self._G, self._pos, ax=self._ax)
         nx.draw_networkx_nodes(self._G, self._pos, node_size=20, ax=self._ax)
 
-        self._ax.set_title(f"Mean TT: {self._mean_travel_time():.2f}")
+        self._ax.set_title(f"Mean TT: {self._mean_travel_time(self._dijkstra_lengths()):.2f}")
         self._ax.axis("off")
 
         self._fig.canvas.draw()
         self._fig.canvas.flush_events()
         plt.pause(0.001)
 
-    def _mean_travel_time(self) -> float:
-        """ calculates the average travel time in minutes across all pairs of stations.
-            Routes by ride time only; wait time is added once (first edge of the path). """
-        period = self.TIME_PERIODS[self._current_period]
-        downtown = self.DOWNTOWN
-        total, count = 0.0, 0.0
+    def _dijkstra_lengths(self) -> dict:
+        """Compute all-pairs shortest path lengths once (expensive operation)."""
+        return dict(
+            nx.all_pairs_dijkstra_path_length(self._G, weight="travel_time_min")
+        )
 
-        # per-line tracking: sum edge ride times by line
+    def _per_line_stats(self) -> dict[str, float]:
+        """Compute mean edge travel time per transit line."""
         line_totals = {"red": 0.0, "orange": 0.0, "blue": 0.0, "green": 0.0, "new": 0.0}
         line_counts = {"red": 0.0, "orange": 0.0, "blue": 0.0, "green": 0.0, "new": 0.0}
         for u, v, data in self._G.edges(data=True):
@@ -373,17 +347,18 @@ class MBTAEnv(gym.Env):
             if line in line_totals:
                 line_totals[line] += data.get("travel_time_min", 0)
                 line_counts[line] += 1.0
-
-        self._per_line_mean_tt = {
+        return {
             line: line_totals[line] / line_counts[line]
             if line_counts[line] > 0 else 0.0
             for line in line_totals
         }
 
-        # Dijkstra by ride time only; returns (distances, paths) per source
-        all_results = dict(
-            nx.all_pairs_dijkstra(self._G, weight="travel_time_min")
-        )
+    def _mean_travel_time(self, lengths: dict) -> float:
+        """ calculates the average travel time in minutes across all pairs of stations.
+            Routes by ride time only; wait time is added once (first edge of the path). """
+        period = self.TIME_PERIODS[self._current_period]
+        downtown = self.DOWNTOWN
+        total, count = 0.0, 0.0
 
         for i, u in enumerate(self.nodes):
             for j, v in enumerate(self.nodes):
@@ -412,37 +387,15 @@ class MBTAEnv(gym.Env):
                 else:
                     w = period["weight_other"]
 
-                distances, paths = all_results.get(u, ({}, {}))
-                if v in distances:
-                    ride_time = distances[v]
-                    path = paths[v]
-                    wait = 0.0
-                    if len(path) >= 2:
-                        # wait at the first edge (boarding)
-                        first_edge = self._G[path[0]][path[1]]
-                        wait += first_edge.get("wait_time", DEFAULT_WAIT_TIME)
-                        # wait again at each line transfer
-                        prev_line = first_edge.get("line", "")
-                        for k in range(1, len(path) - 1):
-                            edge = self._G[path[k]][path[k + 1]]
-                            curr_line = edge.get("line", "")
-                            if curr_line != prev_line:
-                                wait += edge.get("wait_time", DEFAULT_WAIT_TIME)
-                            prev_line = curr_line
-                    travel_time = ride_time + wait
-                else:
-                    travel_time = self.disconnect_penalty
-
+                dist = lengths.get(u, {}).get(v, None)
+                travel_time = dist if dist is not None else self.disconnect_penalty
                 total += w * travel_time
                 count += w
 
         return total / count if count > 0 else 0.0
-    
-    def _reachability(self) -> float:
+
+    def _reachability(self, lengths: dict) -> float:
         """ calculates the fraction of station pairs reachable from each other using Dijkstra's algorithm """
-        lengths = dict(
-            nx.all_pairs_dijkstra_path_length(self._G, weight="travel_time_min")
-        )
         reachable = 0
         total = 0
         for i, u in enumerate(self.nodes):
@@ -454,12 +407,13 @@ class MBTAEnv(gym.Env):
                     reachable += 1
         return reachable / total if total > 0 else 0.0
     
-    def _observation(self, mean_tt: float, reachability: float) -> np.ndarray:
+    def _observation(self, mean_tt: float, reachability: float, per_line: dict[str, float]) -> np.ndarray:
         """ constructs the observation vector based on the current graph state and baseline mean travel time. """
         norm_tt = float(np.clip(mean_tt / DISCONNECT_PENALTY, 0.0, 1.0))
 
         n_edges = self._G.number_of_edges()
-        norm_edges = float(n_edges / max(self.N ** 2, 1))
+        max_edges = max(self.N * (self.N - 1) // 2, 1)  # undirected graph
+        norm_edges = float(n_edges / max_edges)
 
         improvement = (
             (self._baseline_mean - mean_tt) / self._baseline_mean
@@ -470,26 +424,22 @@ class MBTAEnv(gym.Env):
 
         degrees = [d for _, d in self._G.degree()]
         mean_degree = float(np.mean(degrees)) / self.N if degrees else 0.0
-        
+
         # per-line normalized mean travel times
-        per_line = getattr(self, "_per_line_mean_tt", {})
-        norm_red    = float(np.clip(per_line.get("red",    0) / DISCONNECT_PENALTY, 0.0, 1.0))
-        norm_orange = float(np.clip(per_line.get("orange", 0) / DISCONNECT_PENALTY, 0.0, 1.0))
-        norm_blue   = float(np.clip(per_line.get("blue",   0) / DISCONNECT_PENALTY, 0.0, 1.0))
-        norm_green  = float(np.clip(per_line.get("green",  0) / DISCONNECT_PENALTY, 0.0, 1.0))
+        norm_red    = float(np.clip(per_line.get("red",    0) / MAX_TRAVEL_TIME, 0.0, 1.0))
+        norm_orange = float(np.clip(per_line.get("orange", 0) / MAX_TRAVEL_TIME, 0.0, 1.0))
+        norm_blue   = float(np.clip(per_line.get("blue",   0) / MAX_TRAVEL_TIME, 0.0, 1.0))
+        norm_green  = float(np.clip(per_line.get("green",  0) / MAX_TRAVEL_TIME, 0.0, 1.0))
         norm_budget = float(np.clip(self._remaining_budget / self.budget, 0.0, 1.0))
 
-
         return np.array(
-        [norm_tt, norm_edges, norm_improvement, reachability, mean_degree, norm_red, norm_orange, norm_blue, norm_green, norm_budget],
-
+            [norm_tt, norm_edges, norm_improvement, reachability, mean_degree,
+             norm_red, norm_orange, norm_blue, norm_green, norm_budget],
             dtype=np.float32,
         )
 
-    def _info(self, mean_tt: float | None = None) -> dict:
+    def _info(self, mean_tt: float) -> dict:
         """ constructs the info dictionary with human-readable metrics about the current environment state. """
-        if mean_tt is None:
-            mean_tt = self._mean_travel_time()
 
         improvement = (
             (self._baseline_mean - mean_tt) / self._baseline_mean * 100
@@ -522,6 +472,7 @@ class MBTAEnv(gym.Env):
                 if self._hour >= start or self._hour < end:
                     return name
         return "midday"
+    
 if __name__ == "__main__":
     """Loads the graph, runs the gymnasium env_checker."""
     import os
@@ -540,8 +491,7 @@ if __name__ == "__main__":
     print(f"Baseline mean travel time : {info['mean_travel_time_min']} min")
     print(f"Observation shape         : {obs.shape}")
     print(f"Action space              : {env.action_space}\n")
-    print(f"Per-line mean TT          : {env._per_line_mean_tt}")
-    print(f"Starting budget: {info['remaining_budget']}")
+    print(f"Per-line mean TT          : {env._per_line_stats()}")
     print(f"Observation values: {obs}")
     print(f"budget={info['remaining_budget']}")
 
