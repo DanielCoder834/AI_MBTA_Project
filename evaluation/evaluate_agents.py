@@ -35,7 +35,7 @@ from agents.dqn_agent import DQNAgent
 DQN_VERSION        = 2     # v1: budget=5000, add_cost=w*2, no remove refund
                            # v2: budget=1000, add_cost=w*5, remove refund=tt*2.5,
                            #     freq actions modify travel_time (±0.5min), speed_up cost=1.5, slow_down refund=0.75
-DQN_EPISODES       = 200
+DQN_EPISODES       = 400
 DQN_LR             = 0.0001
 DQN_EPSILON_DECAY  = 0.995
 DQN_BUFFER         = 5000
