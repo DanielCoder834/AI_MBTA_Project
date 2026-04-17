@@ -2,17 +2,19 @@
 mbta_env.py  —  Gymnasium environment for MBTA network optimisation
 """
 
-import copy  
-import pickle    
+import copy
+import math
+import os
+import pickle
 import time
-from typing import Any 
-import networkx as nx  
-import numpy as np     
+from typing import Any
+
 import gymnasium as gym
+import matplotlib.pyplot as plt
+import networkx as nx
+import numpy as np
 from gymnasium import spaces
 from gymnasium.utils.env_checker import check_env
-import math
-import matplotlib.pyplot as plt
 
 
 # CONSTANTS
@@ -32,8 +34,8 @@ class MBTAEnv(gym.Env):
         Maximum steps per episode.
     disconnect_penalty : float
         Travel-time penalty charged per unreachable start-destination station pair.
-    render : bool
-        Whether to render the network graph after each action (slows down training).
+    render_mode : str | None
+        Pass "human" to render the network graph after each action (slows down training).
     """
 
     metadata = {"render_modes": ["human"], "render_fps": 30}
@@ -122,7 +124,7 @@ class MBTAEnv(gym.Env):
         self._step_count = 0
         self._cached_mask = None
         self._graph_changed = True
-        self._remaining_budget = self.budget 
+        self._remaining_budget = self.budget
         self._hour = 7
         self._current_period = self._get_current_period()
         # build cached node positions once
@@ -201,6 +203,7 @@ class MBTAEnv(gym.Env):
         self._cached_mask = mask
         self._graph_changed = False
         return mask
+    
     @staticmethod
     def _haversine(lat1, lon1, lat2, lon2):
         """Calculate the great circle distance in kilometers between two points on the Earth."""
@@ -333,6 +336,10 @@ class MBTAEnv(gym.Env):
         self._fig.canvas.flush_events()
         plt.pause(0.001)
 
+    def close(self):
+        if hasattr(self, "_fig"):
+            plt.close(self._fig)
+
     def _dijkstra_lengths(self) -> dict:
         """Compute all-pairs shortest path lengths once (expensive operation)."""
         return dict(
@@ -453,14 +460,8 @@ class MBTAEnv(gym.Env):
             "step":                 self._step_count,
             "current_period":       self._current_period,
             "remaining_budget":     self._remaining_budget,
-
-
         }
 
-    def close(self):
-        if hasattr(self, "_fig"):
-            plt.close(self._fig)
-            
     def _get_current_period(self) -> str:
         for name, config in self.TIME_PERIODS.items():
             start, end = config["hours"]
@@ -474,7 +475,6 @@ class MBTAEnv(gym.Env):
     
 if __name__ == "__main__":
     """Loads the graph, runs the gymnasium env_checker."""
-    import os
     _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
     with open(os.path.join(_PROJECT_ROOT, "outputs", "mbta_graph.pkl"), "rb") as f:

@@ -32,9 +32,9 @@ from agents.dqn_agent import DQNAgent
 
 
 # CHANGE THESE TO EVALUATE DIFFERENT RUNS
-DQN_VERSION        = 2     # v1: budget=5000, add_cost=w*2, no remove refund
-                           # v2: budget=1000, add_cost=w*5, remove refund=tt*2.5,
-                           #     freq actions modify travel_time (±0.5min), speed_up cost=1.5, slow_down refund=0.75
+DQN_VERSION        = 2     # v2: budget=1000, add_cost=w*5, remove refund=tt*2.5,
+                           # freq actions modify travel_time (±0.5min), speed_up cost=1.5, slow_down refund=0.75
+                           # v1: removed from repo
 DQN_EPISODES       = 400
 DQN_LR             = 0.0001
 DQN_EPSILON_DECAY  = 0.995
@@ -48,7 +48,6 @@ DQN_TARGET_UPDATE  = 200
 GRAPH_PATH = os.path.join(PROJECT_ROOT, "outputs", "mbta_graph.pkl")
 DQN_RUN_TAG = f"dqn_v{DQN_VERSION}_ep{DQN_EPISODES}_lr{DQN_LR}_ed{DQN_EPSILON_DECAY}_buf{DQN_BUFFER}_tgt{DQN_TARGET_UPDATE}"
 DQN_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "models", f"{DQN_RUN_TAG}.pt")
-# PPO_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "models", f"maskable_mbta_ppo_{PPO_TIMESTEPS}.zip")
 MAX_STEPS = 50
 RENDER = True
 
@@ -102,45 +101,6 @@ def evaluate_dqn(graph, render=False):
 
     env.close()
     return summary, final_graph
-
-
-# def evaluate_ppo(graph, render=False):
-#     """Evaluate imported MaskablePPO agent for one episode."""
-#     # initialize env
-#     env = MBTAEnv(graph, max_steps=MAX_STEPS, render=render,  budget=500.0)
-#     # load trained PPO policy
-#     model = MaskablePPO.load(PPO_MODEL_PATH)
-#
-#     obs, info = env.reset()
-#     done = False
-#     total_reward = 0.0
-#
-#     while not done:
-#         # retrieve valid action mask from environment
-#         masks = get_action_masks(env)
-#         # select deterministic action from trained policy
-#         action, _ = model.predict(obs, action_masks=masks, deterministic=True)
-#
-#         obs, reward, terminated, truncated, info = env.step(action)
-#         total_reward += reward
-#
-#         if render:
-#             env.render()
-#
-#         done = terminated or truncated
-#
-#     # performance metrics
-#     summary = {
-#         "agent": "MaskablePPO",
-#         "final_mean_tt": info["mean_travel_time_min"],
-#         "improvement_pct": info["improvement_pct"],
-#         "n_edges": info["n_edges"],
-#         "steps": info["step"],
-#         "total_reward": total_reward,
-#     }
-#
-#     env.close()
-#     return summary
 
 
 LINE_COLORS = {
@@ -351,41 +311,6 @@ def print_summary(summary):
     print(f"Total reward: {summary['total_reward']:.2f}")
 
 
-def print_comparison(results):
-    """Print side by side comparison of all evaluated agents."""
-    print("\n" + "=" * 72)
-    print("FINAL COMPARISON")
-    print("=" * 72)
-    print(
-        f"{'Agent':<15}"
-        f"{'Mean TT (min)':<18}"
-        f"{'Improve %':<14}"
-        f"{'Edges':<10}"
-        f"{'Steps':<8}"
-        f"{'Reward':<10}"
-    )
-    print("-" * 72)
-
-    for result in results:
-        print(
-            f"{result['agent']:<15}"
-            f"{result['final_mean_tt']:<18.2f}"
-            f"{result['improvement_pct']:<14.2f}"
-            f"{result['n_edges']:<10}"
-            f"{result['steps']:<8}"
-            f"{result['total_reward']:<10.2f}"
-        )
-
-    print("=" * 72)
-
-    # determine best performing agents
-    best_tt = min(results, key=lambda r: r["final_mean_tt"])
-    best_reward = max(results, key=lambda r: r["total_reward"])
-
-    print(f"Lowest final mean travel time: {best_tt['agent']}")
-    print(f"Highest total reward: {best_reward['agent']}")
-
-
 class Tee:
     """Write to both a file and the original stdout."""
     def __init__(self, file, stream):
@@ -429,16 +354,6 @@ def main():
         save_final_graph(graph, dqn_final_graph, "DQN", DQN_RUN_TAG)
     else:
         print(f"\nSkipping DQN: model file not found at {DQN_MODEL_PATH}")
-
-    # if os.path.exists(PPO_MODEL_PATH):
-    #     ppo_result = evaluate_ppo(graph, render=RENDER)
-    #     print_summary(ppo_result)
-    #     results.append(ppo_result)
-    # else:
-    #     print(f"\nSkipping PPO: model file not found at {PPO_MODEL_PATH} "
-    #           f"or sb3_contrib is not installed.")
-
-    print_comparison(results)
 
     # restore stdout and close log
     sys.stdout = original_stdout
