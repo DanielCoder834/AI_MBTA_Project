@@ -36,6 +36,9 @@ class MBTAEnv(gym.Env):
         Travel-time penalty charged per unreachable start-destination station pair.
     render_mode : str | None
         Pass "human" to render the network graph after each action (slows down training).
+    budget : float
+        Total budget for modifications. 
+        Adding edges/speeding up have costs, removing edges/slowing down refund the budget.
     """
 
     metadata = {"render_modes": ["human"], "render_fps": 30}
@@ -89,13 +92,14 @@ class MBTAEnv(gym.Env):
         self._current_period = "midday"
         self._hour = 7
 
-        # action_type: 0=ADD_EDGE, 1=REMOVE_EDGE, 2=SPEED_UP_EDGE, 3=SLOW_DOWN_EDGE
+        # action_types: 0=ADD_EDGE, 1=REMOVE_EDGE, 2=SPEED_UP_EDGE, 3=SLOW_DOWN_EDGE
         self._num_pairs = self.N * (self.N - 1)  # ordered pairs, no self-loops
         self.num_actions = 4 * self._num_pairs
         self.action_space = spaces.Discrete(self.num_actions)
 
         self._cached_mask = None
         self._graph_changed = True
+
         self.budget = budget
         self._remaining_budget = budget
 
@@ -106,10 +110,13 @@ class MBTAEnv(gym.Env):
         )
 
     def encode_action(self, action_type: int, u_idx: int, v_idx: int) -> int:
+        """ Convert (action_type, node_u, node_v) into a single discrete action index.
+        Flattens action space representing all edge modification operations for agent. """
         pair_idx = u_idx * (self.N - 1) + (v_idx if v_idx < u_idx else v_idx - 1)
         return action_type * self._num_pairs + pair_idx
 
     def decode_action(self, action: int) -> tuple[int, int, int]:
+        """ Convert a flattened action index back into (action_type, node_u_index, node_v_index). """
         action = int(action)
         action_type = action // self._num_pairs
         pair_idx = action % self._num_pairs
@@ -119,6 +126,7 @@ class MBTAEnv(gym.Env):
         return action_type, u_idx, v_idx
 
     def reset(self, *, seed: int | None = None, options: dict[str, Any] | None = None):
+        """ Reset environment to initial MBTA configuration at start of episode. """
         super().reset(seed=seed)
         self._G = copy.deepcopy(self._base_graph)
         self._step_count = 0
@@ -151,11 +159,11 @@ class MBTAEnv(gym.Env):
         return obs, info
     
     def _is_valid_add(self, u: str, v: str) -> bool:
-        """ only allow adding edges between distinct stations that aren't already directly connected"""
+        """ Only allow adding edges between distinct stations that aren't already directly connected. """
         return u != v and not self._G.has_edge(u, v)
 
     def _is_valid_remove(self, u: str, v: str) -> bool:
-        """ only allow removing edges that exist and aren't bridges (whose removal would disconnect the graph)"""
+        """ Only allow removing edges that exist and aren't bridges (removal would disconnect the graph). """
         if not self._G.has_edge(u, v):
             return False
         bridges = getattr(self, "_bridges", None)
@@ -165,7 +173,7 @@ class MBTAEnv(gym.Env):
         return frozenset((u, v)) not in bridges
 
     def _is_valid_action(self, action_type: int, u: str, v: str) -> bool:
-        """ check if the proposed action is valid for the current graph state """
+        """ Check if the proposed action is valid for the current graph state. """
         if action_type == 0:
             if not self._is_valid_add(u, v):
                 return False
@@ -206,7 +214,7 @@ class MBTAEnv(gym.Env):
     
     @staticmethod
     def _haversine(lat1, lon1, lat2, lon2):
-        """Calculate the great circle distance in kilometers between two points on the Earth."""
+        """ Calculate the great circle distance in kilometers between two points on the Earth. """
         r = 6371.0
 
         dlat = math.radians(lat2 - lat1)
@@ -221,7 +229,7 @@ class MBTAEnv(gym.Env):
         return r * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
     def _edge_weight_from_distance(self, u: str, v: str) -> float:
-        """ estimate travel time in minutes for a new edge based on the haversine distance between stations """
+        """ Estimate travel time in minutes for a new edge based on the haversine distance between stations """
         try:
             lat1, lon1 = self._G.nodes[u]["lat"], self._G.nodes[u]["lon"]
             lat2, lon2 = self._G.nodes[v]["lat"], self._G.nodes[v]["lon"]
@@ -281,7 +289,7 @@ class MBTAEnv(gym.Env):
         return False
     
     def step(self, action: np.ndarray):
-        """ applies the given action to the environment and returns the new observation, reward, done flags, and info. """
+        """ Applies the given action to the environment and returns the new observation, reward, done flags, and info. """
         action_type, u_idx, v_idx = self.decode_action(action)
 
         u = self.nodes[u_idx]
@@ -317,7 +325,7 @@ class MBTAEnv(gym.Env):
         return obs, reward, terminated, truncated, info
 
     def render(self):
-        """Renders the current state of the environment."""
+        """ Renders the current state of the environment. """
         if not self._render_enabled:
             return
         if not hasattr(self, "_fig"):
@@ -341,13 +349,13 @@ class MBTAEnv(gym.Env):
             plt.close(self._fig)
 
     def _dijkstra_lengths(self) -> dict:
-        """Compute all-pairs shortest path lengths once (expensive operation)."""
+        """ Compute all-pairs shortest path lengths once (expensive operation). """
         return dict(
             nx.all_pairs_dijkstra_path_length(self._G, weight="travel_time_min")
         )
 
     def _per_line_stats(self) -> dict[str, float]:
-        """Compute mean edge travel time per transit line."""
+        """ Compute mean edge travel time per transit line. """
         line_totals = {"red": 0.0, "orange": 0.0, "blue": 0.0, "green": 0.0, "new": 0.0}
         line_counts = {"red": 0.0, "orange": 0.0, "blue": 0.0, "green": 0.0, "new": 0.0}
         for u, v, data in self._G.edges(data=True):
