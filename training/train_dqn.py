@@ -6,8 +6,8 @@ Trains DQN agent on the MBTAEnv reinforcement learning environment.
 The agent learns how to modify the MBTA transit graph by adding/removing
 edges to minimize average commuter travel time.
 
-Run (creates dqn_mbta.pt with trained Q-network weights):
-python train_dqn.py
+Run:
+    python training/train_dqn.py
 """
 import matplotlib.pyplot as plt
 import pickle

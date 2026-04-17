@@ -11,7 +11,7 @@ For each agent:
 - prints a comparison table
 
 Run:
-    python evaluate_agents.py
+    python evaluation/evaluate_agents.py
 """
 
 import os
@@ -30,27 +30,19 @@ from agents.dqn_agent import DQNAgent
 # from sb3_contrib import MaskablePPO
 # from sb3_contrib.common.maskable.utils import get_action_masks
 
-
 # CHANGE THESE TO EVALUATE DIFFERENT RUNS
-DQN_VERSION        = 2     # v2: budget=1000, add_cost=w*5, remove refund=tt*2.5,
-                           # freq actions modify travel_time (±0.5min), speed_up cost=1.5, slow_down refund=0.75
-                           # v1: removed from repo
 DQN_EPISODES       = 400
 DQN_LR             = 0.0001
 DQN_EPSILON_DECAY  = 0.995
 DQN_BUFFER         = 5000
 DQN_TARGET_UPDATE  = 200
 
-# PPO_TIMESTEPS = 30720
-
-
 # DONT CHANGE
 GRAPH_PATH = os.path.join(PROJECT_ROOT, "outputs", "mbta_graph.pkl")
-DQN_RUN_TAG = f"dqn_v{DQN_VERSION}_ep{DQN_EPISODES}_lr{DQN_LR}_ed{DQN_EPSILON_DECAY}_buf{DQN_BUFFER}_tgt{DQN_TARGET_UPDATE}"
+DQN_RUN_TAG = f"dqn_ep{DQN_EPISODES}_lr{DQN_LR}_ed{DQN_EPSILON_DECAY}_buf{DQN_BUFFER}_tgt{DQN_TARGET_UPDATE}"
 DQN_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "models", f"{DQN_RUN_TAG}.pt")
 MAX_STEPS = 50
 RENDER = True
-
 
 def evaluate_dqn(graph, render=False):
     """Evaluate implemented DQN agent for one episode."""

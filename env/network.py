@@ -1,5 +1,16 @@
 """
-MBTA NetworkX graph.
+network.py
+
+Builds NetworkX graph representation of the MBTA network from station and edge data files.
+
+- loads station coords from stops.txt, travel-time connections from t_edges.txt
+- constructs NetworkX graph with travel_time_min edge attributes
+- assigns line colors to each station
+- visualizes MBTA network using matplotlib
+- saves resulting graph to outputs/mbta_graph.pkl
+
+Run:
+    python env/network.py
 """
 
 import csv
@@ -58,7 +69,6 @@ def build_graph():
                     "lon":  float(row["stop_lon"]),
                 }
 
-
     # create the graph and add nodes with (name, lat, lon)
     G = nx.Graph()
     for id in station_ids:
@@ -77,6 +87,7 @@ def build_graph():
     for src, dst, travel_time, color in edges_raw:
         G.add_edge(src, dst, line=color, travel_time_min=travel_time)
     return G
+
 def draw_graph(G):
     # node positions for plotting
     pos = {

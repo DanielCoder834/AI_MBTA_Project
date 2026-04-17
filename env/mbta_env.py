@@ -1,5 +1,16 @@
 """
-mbta_env.py  —  Gymnasium environment for MBTA network optimisation
+mbta_env.py
+
+Gymnasium reinforcement learning environment for optimizing MBTA network.
+
+Agents can:
+    0 = add edges between stations
+    1 = remove edges (while preserving connectivity)
+    2 = speed up existing edges (reduce travel time)
+    3 = slow down edges (increase travel time with budget refund)
+
+Agent's objective is to reduce the average weighted commuter travel time
+across the network while respecting infrastructure budget constraints.
 """
 
 import copy

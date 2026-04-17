@@ -6,8 +6,8 @@ Final number of edges: 131
 Episode steps: 50
 Total reward: 180.61
 
-Final graph saved to /Users/anarang/Desktop/AI_MBTA_Project/outputs/graphs/dqn_v2_ep400_lr0.0001_ed0.995_buf5000_tgt200_final_graph.pkl
-Final graph visualization saved to /Users/anarang/Desktop/AI_MBTA_Project/outputs/graphs/dqn_v2_ep400_lr0.0001_ed0.995_buf5000_tgt200_final_graph.png
+Final graph saved to /Users/anarang/Desktop/AI_MBTA_Project/outputs/graphs/dqn_ep400_lr0.0001_ed0.995_buf5000_tgt200_final_graph.pkl
+Final graph visualization saved to /Users/anarang/Desktop/AI_MBTA_Project/outputs/graphs/dqn_ep400_lr0.0001_ed0.995_buf5000_tgt200_final_graph.png
 
 --- Graph Changes (DQN) ---
   Edges removed:          1
