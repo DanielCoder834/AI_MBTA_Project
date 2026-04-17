@@ -50,7 +50,6 @@ Make sure `outputs/mbta_graph.pkl` exists before proceeding.
 Open `training/train_dqn.py` and set the hyperparameters at the top of the file:
 
 ```python
-VERSION        = 2       # version tag for the run
 NUM_EPISODES   = 400     # number of training episodes
 EPSILON_DECAY  = 0.995   # exploration decay rate
 ```
@@ -71,7 +70,6 @@ This will:
 Open `evaluation/evaluate_agents.py` and make sure the run parameters at the top match the model you want to evaluate:
 
 ```python
-DQN_VERSION        = 2
 DQN_EPISODES       = 400
 DQN_LR             = 0.0001
 DQN_EPSILON_DECAY  = 0.995
