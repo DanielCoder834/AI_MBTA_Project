@@ -105,7 +105,9 @@ for episode in range(NUM_EPISODES):
 RUN_TAG = f"dqn_ep{NUM_EPISODES}_lr{agent.optimizer.param_groups[0]['lr']}_ed{EPSILON_DECAY}_buf{agent.replay_buffer.buffer.maxlen}_tgt{agent.target_update_freq}"
 
 # save trained model
-model_path = os.path.join(PROJECT_ROOT, "outputs", "models", f"{RUN_TAG}.pt")
+model_dir = os.path.join(PROJECT_ROOT, "outputs", "models")
+os.makedirs(model_dir, exist_ok=True)
+model_path = os.path.join(model_dir, f"{RUN_TAG}.pt")
 agent.save(model_path)
 print(f"Model saved to {model_path}")
 
